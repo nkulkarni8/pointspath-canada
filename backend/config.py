@@ -10,10 +10,13 @@ class Settings:
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./points_optimizer.db")
     
-    # Fix for Render/Neon PostgreSQL URLs
-    # They use postgres:// but SQLAlchemy needs postgresql://
+    # Fix for both old and new postgres URLs
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    
+    # Psycopg3 compatibility
+    if "postgresql://" in DATABASE_URL and "sslmode" not in DATABASE_URL:
+        DATABASE_URL += "?sslmode=require" if "?" not in DATABASE_URL else "&sslmode=require"
     
     # Environment
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
