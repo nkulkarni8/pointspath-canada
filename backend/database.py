@@ -1,24 +1,38 @@
 from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from config import settings
 from models import Base
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Database URL - use SQLite for local development, PostgreSQL for production
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite:///./points_optimizer.db"  # Default to SQLite for easy local testing
-)
+# Use DATABASE_URL from config (supports both SQLite and PostgreSQL)
+SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 
 # For PostgreSQL (when you're ready to deploy):
 # DATABASE_URL = "postgresql://user:password@localhost/points_optimizer"
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
-)
+# Create engine with appropriate settings
+if "sqlite" in SQLALCHEMY_DATABASE_URL:
+    # SQLite-specific settings
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL,
+        connect_args={"check_same_thread": False}
+    )
+    print("✅ Using SQLite database (development mode)")
+else:
+    # PostgreSQL settings (for production)
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL,
+        pool_pre_ping=True,  # Verify connections before using
+        pool_recycle=3600,   # Recycle connections after 1 hour
+        echo=settings.ENVIRONMENT == "development"  # Log SQL in dev
+    )
+    print("✅ Using PostgreSQL database (production mode)")
+
+print(f"📂 Database: {SQLALCHEMY_DATABASE_URL[:40]}...")
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

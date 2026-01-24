@@ -17,10 +17,14 @@ build/
 *.sqlite
 *.sqlite3
 
-# Environment variables
+# Environment variables - IMPORTANT!
 .env
 .env.local
 .env.production
+backend/.env
+backend/.env.local
+frontend/.env
+frontend/.env.local
 
 # Logs
 *.log
@@ -41,14 +45,13 @@ Thumbs.db
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
-frontend/.env.local
 
 # Testing
 .coverage
 htmlcov/
 .pytest_cache/
 
-# Temporary files
+# Temporary
 *.tmp
 *.bak
 temp/

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plane, CreditCard, TrendingUp, Calendar, Users, MapPin, AlertCircle, Loader2, Target, Calculator } from 'lucide-react';
+import { API_URL } from './config';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 

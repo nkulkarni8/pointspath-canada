@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -5,27 +8,31 @@ from typing import List, Optional
 from datetime import date, datetime, timedelta
 import uvicorn
 from sqlalchemy.orm import Session
+from config import settings
 
 # Import database models and session
 from database import get_db, init_db, seed_database
 from models import CreditCard as CreditCardModel, Route as RouteModel
 
-app = FastAPI(title="Points Optimizer Canada API")
+app = FastAPI(
+    title=settings.API_TITLE,
+    version=settings.API_VERSION,
+    description=settings.API_DESCRIPTION
+)
+
+print(f"🚀 Starting {settings.API_TITLE}")
+print(f"📍 Environment: {settings.ENVIRONMENT}")
 
 # Enable CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:3000",
-        "*"  # Allow all for development
-    ],
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+print(f"🌐 CORS enabled for: {settings.ALLOWED_ORIGINS}")
 # ============================================================================
 # PYDANTIC MODELS (Request/Response schemas)
 # ============================================================================
@@ -625,4 +632,15 @@ async def health_check():
 # ============================================================================
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    import uvicorn
+    import os
+    
+    # Use PORT from environment variable (Render sets this automatically)
+    port = int(os.getenv("PORT", 8000))
+    
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",  # Important for deployment
+        port=port,
+        reload=settings.ENVIRONMENT == "development"
+    )
