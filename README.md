@@ -421,16 +421,14 @@ A: Credit card data is 100% current. Route points are typical estimates (±10-20
 A: Currently admin-only, but we're building a submission feature!
 
 **Q: How often is data updated?**  
-A: Credit card bonuses updated weekly, routes updated monthly.
+A: Credit card bonuses updated bi-weekly, routes updated monthly.
 
 ---
 
 ## 📧 Contact
 
 - **Issues:** [GitHub Issues](https://github.com/nkulkarni8/points-optimizer-canada/issues)
-- **Discussions:** [r/churningcanada](https://reddit.com/r/churningcanada)
-- **Email:** your-email@example.com
-
+- **Email:** kulkarni.nachiket8@gmail.com
 ---
 
 ## 📄 License
