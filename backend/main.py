@@ -451,7 +451,7 @@ async def get_routes(db: Session = Depends(get_db)):
         } for route in routes]
     }
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"], status_code=200)
 async def health_check(db: Session = Depends(get_db)):
     try:
         card_count = db.query(CreditCardModel).count()
@@ -464,11 +464,14 @@ async def health_check(db: Session = Depends(get_db)):
             "database": {"cards": card_count, "routes": route_count}
         }
     except Exception as e:
-        return {
-            "status": "degraded",
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        }
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "degraded",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
+        )
 
 if __name__ == "__main__":
     import os
