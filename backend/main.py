@@ -59,7 +59,7 @@ class CreditCard(BaseModel):
     earn_rate: str
     annual_fee: int
     welcome_bonus: int
-    categories: List[str]
+    categories: Optional[List[str]] = None
 
     class Config:
         from_attributes = True
