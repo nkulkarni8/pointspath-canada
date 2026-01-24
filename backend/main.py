@@ -150,15 +150,17 @@ TYPICAL_MONTHLY_SPENDING = {
 # ============================================================================
 
 def calculate_card_strategy(card: CreditCardModel, points_needed: int, months: int, user_monthly_budget: Optional[int] = None):
-    """Calculate optimal spending strategy with smart budget handling"""
+    """Calculate optimal spending strategy with smart budget handling - OPTIMIZED VERSION"""
     
     card_rates = CARD_EARNING_RATES.get(card.name, {"general": 1.0})
     monthly_points_needed = points_needed / months
     
+    # Find all bonus categories (multiplier >= 1.5)
     bonus_categories = {cat: mult for cat, mult in card_rates.items() if mult >= 1.5}
     
+    # If no bonus categories, use general spending only
     if not bonus_categories:
-        avg_rate = 1.0
+        avg_rate = card_rates.get("general", 1.0)
         monthly_spend = monthly_points_needed / avg_rate
         
         budget_warning = None
@@ -178,32 +180,44 @@ def calculate_card_strategy(card: CreditCardModel, points_needed: int, months: i
             "total_spend_needed": int(monthly_spend * months),
             "monthly_points_earned": int(monthly_points_needed),
             "total_points_earned": int(points_needed),
-            "category_breakdown": [CategorySpending(category="General", monthly_spend=int(monthly_spend), multiplier=1.0, monthly_points=int(monthly_points_needed))],
+            "category_breakdown": [CategorySpending(
+                category="General",
+                monthly_spend=int(monthly_spend),
+                multiplier=avg_rate,
+                monthly_points=int(monthly_points_needed)
+            )],
             "budget_warning": budget_warning
         }
     
+    # Sort categories by earn rate (best first)
     sorted_categories = sorted(bonus_categories.items(), key=lambda x: x[1], reverse=True)
     
+    # SMART STRATEGY: Allocate spending to highest earning categories first
     category_breakdown = []
+    remaining_points = monthly_points_needed
     total_monthly_spend = 0
-    total_monthly_points = 0
     
-    for category, multiplier in sorted_categories[:3]:
-        typical_spend = TYPICAL_MONTHLY_SPENDING.get(category, 200)
-        points_from_category = typical_spend * multiplier
+    for category, multiplier in sorted_categories:
+        if remaining_points <= 0:
+            break
+        
+        # Calculate how much to spend in this category to maximize points
+        # Strategy: Use the best categories until points are met
+        spend_in_category = remaining_points / multiplier
+        points_from_category = spend_in_category * multiplier
         
         category_breakdown.append(CategorySpending(
             category=category.replace("_", " ").title(),
-            monthly_spend=typical_spend,
+            monthly_spend=int(spend_in_category),
             multiplier=multiplier,
             monthly_points=int(points_from_category)
         ))
         
-        total_monthly_spend += typical_spend
-        total_monthly_points += points_from_category
+        total_monthly_spend += spend_in_category
+        remaining_points -= points_from_category
     
-    if total_monthly_points < monthly_points_needed:
-        remaining_points = monthly_points_needed - total_monthly_points
+    # If still short on points (shouldn't happen with above logic, but safety check)
+    if remaining_points > 0:
         general_rate = card_rates.get("general", 1.0)
         additional_spend = remaining_points / general_rate
         
@@ -215,10 +229,10 @@ def calculate_card_strategy(card: CreditCardModel, points_needed: int, months: i
         ))
         
         total_monthly_spend += additional_spend
-        total_monthly_points += remaining_points
     
-    avg_rate = total_monthly_points / total_monthly_spend if total_monthly_spend > 0 else 1.0
+    avg_rate = monthly_points_needed / total_monthly_spend if total_monthly_spend > 0 else 1.0
     
+    # Budget warnings
     budget_warning = None
     if total_monthly_spend > 10000:
         budget_warning = "⚠️ Very high spending required (${:,.0f}/month) - consider extending timeline or different cards".format(total_monthly_spend)
@@ -234,8 +248,8 @@ def calculate_card_strategy(card: CreditCardModel, points_needed: int, months: i
         "avg_earn_rate": round(avg_rate, 2),
         "monthly_spend_needed": int(total_monthly_spend),
         "total_spend_needed": int(total_monthly_spend * months),
-        "monthly_points_earned": int(total_monthly_points),
-        "total_points_earned": int(total_monthly_points * months),
+        "monthly_points_earned": int(monthly_points_needed),
+        "total_points_earned": int(points_needed),
         "category_breakdown": category_breakdown,
         "budget_warning": budget_warning
     }
