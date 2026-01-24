@@ -1,43 +1,37 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, JSON, Date, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, Boolean, JSON, Date, ForeignKey, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
 Base = declarative_base()
 
 class CreditCard(Base):
-    """Credit card information"""
     __tablename__ = "credit_cards"
     
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
-    issuer = Column(String, nullable=False)  # TD, RBC, CIBC, Amex, Scotia, BMO
-    program = Column(String, nullable=False)  # Aeroplan, Avion, Scene+, etc.
-    earn_rate = Column(String, nullable=False)
-    annual_fee = Column(Integer, nullable=False)
-    welcome_bonus = Column(Integer, nullable=False)
-    categories = Column(JSON)  # ["dining", "groceries", "gas", etc.]
-    transfer_partners = Column(JSON)  # ["Air Canada", "United", etc.]
+    name = Column(String(255), nullable=False)
+    issuer = Column(String(100), nullable=True)
+    program = Column(String(100), nullable=True)
+    earn_rate = Column(String(500), nullable=True)  # Changed to String for descriptions
+    annual_fee = Column(Integer, nullable=True)
+    welcome_bonus = Column(Integer, nullable=True)
+    categories = Column(Text, nullable=True)
+    transfer_partners = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
-    
+
 class Route(Base):
-    """Flight route and points requirements"""
     __tablename__ = "routes"
     
     id = Column(Integer, primary_key=True, index=True)
-    from_city = Column(String, nullable=False, index=True)
-    to_city = Column(String, nullable=False, index=True)
-    distance_km = Column(Integer, nullable=False)
-    route_type = Column(String)  # domestic, short-haul, long-haul
-    
-    # Points requirements by class
-    economy_points = Column(Integer, nullable=False)
-    premium_economy_points = Column(Integer)
-    business_points = Column(Integer)
-    first_points = Column(Integer)
-    
-    # Airline program
-    program = Column(String, nullable=False)  # Aeroplan, Avios, etc.
-    
+    from_city = Column(String(100), nullable=False)
+    to_city = Column(String(100), nullable=False)
+    distance_km = Column(Integer, nullable=True)
+    route_type = Column(String(50), nullable=True)
+    economy_points = Column(Integer, nullable=True)
+    premium_economy_points = Column(Integer, nullable=True)
+    business_points = Column(Integer, nullable=True)
+    first_points = Column(Integer, nullable=True)
+    program = Column(String(100), nullable=True)
+
 class SpendingCategory(Base):
     """Spending categories for earning optimization"""
     __tablename__ = "spending_categories"

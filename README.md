@@ -1,106 +1,87 @@
-# 🎯 Points Optimizer Canada
+# PointsPath Canada 🍁
 
-> **Free Canadian credit card points calculator and travel planning tool**
+**Your path to free travel with Canadian credit cards**
 
-Calculate how many points you need for flights and get personalized earning strategies with Canadian credit cards (TD Aeroplan, CIBC, Scotia, RBC Avion, Amex and more).
+A full-stack web application that helps Canadians maximize credit card points for travel rewards. Calculate points needed for flights, discover optimal earning strategies, and bridge points gaps with personalized spending plans.
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Python](https://img.shields.io/badge/python-3.11+-green.svg)
-![React](https://img.shields.io/badge/react-18.0+-blue.svg)
-![Status](https://img.shields.io/badge/status-production--ready-brightgreen.svg)
-
-**Live Demo:** [Your URL Here]  
-**Community:** [r/churningcanada](https://reddit.com/r/churningcanada)
+[![Live Demo](https://img.shields.io/badge/demo-live-success)](https://pointspath-canada.vercel.app)
+[![API Status](https://img.shields.io/badge/API-healthy-success)](https://pointspath-canada-api.onrender.com/health)
 
 ---
 
-## 📋 Table of Contents
+## 🚀 Features
 
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Quick Start](#quick-start)
-- [Project Structure](#project-structure)
-- [Deployment](#deployment)
-- [Data Updates](#data-updates)
-- [Contributing](#contributing)
-- [License](#license)
+### Flow 1: Trip Planning Calculator
+- Calculate points needed for 242+ flight routes (all bidirectional)
+- Coverage: Domestic Canada, USA, Mexico, Europe, Asia, Middle East, Oceania, Caribbean, South America
+- Support for Economy, Premium Economy, Business, and First Class
+- Real-time passenger and trip duration calculations
+- Round-trip vs one-way estimates
 
----
+### Flow 2: Points Gap Calculator
+- Bridge the gap between current points and travel goals
+- Smart budget calculation (auto-calculates if not provided)
+- Personalized strategies for all 22 Canadian credit cards
+- Category-specific spending breakdown
+- Budget feasibility warnings and timeline suggestions
 
-## ✨ Features
-
-### 🗺️ **Two Powerful Flows**
-
-**Flow 1: Trip Planning**
-- Calculate points needed for specific routes
-- Compare different travel classes (Economy, Business, First)
-- Get personalized earning strategies based on top Canadian cards
-- Supports 20+ popular routes from Canadian cities
-
-**Flow 2: Points Gap Calculator** ⭐
-- Enter exact points needed from any airline website
-- Select YOUR actual credit cards
-- Get month-by-month spending plan
-- See if your goal is achievable within your budget
-- Category-specific spending breakdowns
-
-### 💳 **Real Canadian Data**
-
-- **18+ Credit Cards** from TD, CIBC, RBC, Scotiabank, BMO, Amex
-- **Current Welcome Bonuses** (Updated January 2026)
-- **Accurate Earning Rates** for groceries, dining, gas, travel, etc.
-- **Transfer Partners** and program details
-
-### 🎯 **Smart Features**
-
-- Real-time calculations with no page refresh
-- Mobile-responsive design
-- Data freshness indicators
-- Input validation and error handling
-- SEO optimized for organic traffic
+### Credit Card Database
+- **22 Canadian credit cards** with January 2026 welcome bonuses
+- Programs: Aeroplan, Membership Rewards, Avion, Scene+, BMO Rewards, Cash Back
+- Issuers: TD, CIBC, Amex, RBC, Scotiabank, BMO, National Bank, Tangerine
+- Welcome bonuses ranging from 0 to 95,000 points
 
 ---
 
-## 🛠️ Tech Stack
+## 🏗️ Tech Stack
 
-### **Backend**
-- **Python 3.11+** - Core language
-- **FastAPI** - Modern, fast web framework
-- **SQLAlchemy** - ORM for database operations
-- **PostgreSQL** - Production database (SQLite for local dev)
-- **Pydantic** - Data validation
+### Frontend
+- **React 18** with Vite
+- **Tailwind CSS** for styling
+- **Axios** for API calls
+- Deployed on **Vercel**
 
-### **Frontend**
-- **React 18** - UI framework
-- **Vite** - Build tool and dev server
-- **Tailwind CSS** - Utility-first styling
-- **Lucide React** - Icon library
+### Backend
+- **FastAPI** (Python)
+- **SQLAlchemy** ORM
+- **Pydantic** for validation
+- **PostgreSQL** (Neon) for production
+- **SQLite** for local development
+- Deployed on **Render**
 
-### **Infrastructure**
-- **Docker** - Containerization
-- **GitHub Actions** - CI/CD (optional)
-- **Render/Railway/AWS** - Hosting options
+### Database
+- **Neon PostgreSQL** (production)
+- **SQLite** (local development)
+- 22 credit cards, 242 flight routes
 
 ---
 
-## 🚀 Quick Start
+## 🌐 Live Deployment
 
-### **Prerequisites**
+| Service | Platform | URL | Cost |
+|---------|----------|-----|------|
+| **Frontend** | Vercel | https://pointspath-canada.vercel.app | Free |
+| **Backend API** | Render | https://pointspath-canada-api.onrender.com | Free |
+| **Database** | Neon PostgreSQL | Managed | Free |
+| **Total** | — | — | **$0/month** |
 
-- Python 3.11 or higher
-- Node.js 18 or higher
+### Free Tier Details
+- **Vercel**: 100 GB bandwidth/month, unlimited projects
+- **Render**: 750 hours/month (sleeps after 15min inactivity)
+- **Neon**: 0.5 GB storage, 3 GB data transfer/month
+
+---
+
+## 🚀 Local Development
+
+### Prerequisites
+- Python 3.10+
+- Node.js 18+
 - Git
 
-### **1. Clone Repository**
-
+### Backend Setup
 ```bash
-git clone https://github.com/nkulkarni8/points-optimizer-canada.git
-cd points-optimizer-canada
-```
-
-### **2. Backend Setup**
-
-```bash
+# Navigate to backend
 cd backend
 
 # Create virtual environment
@@ -115,343 +96,249 @@ source venv/bin/activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Initialize database
+# Create .env file
+cat > .env << EOL
+DATABASE_URL=sqlite:///./points_optimizer.db
+ENVIRONMENT=development
+ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5174
+EOL
+
+# Initialize database with 22 cards
 python database.py
+
+# Update routes (242 routes)
+python update_routes.py
+
+# Verify database
+python view_database.py
 
 # Start backend server
 python main.py
+# Server runs at http://localhost:8000
 ```
 
-Backend runs at: **http://localhost:8000**  
-API Docs: **http://localhost:8000/docs**
-
-### **3. Frontend Setup**
-
-Open a new terminal:
-
+### Frontend Setup
 ```bash
+# Navigate to frontend
 cd frontend
 
 # Install dependencies
 npm install
 
+# Create .env file
+cat > .env << EOL
+VITE_API_URL=http://localhost:8000
+EOL
+
 # Start development server
 npm run dev
+# App runs at http://localhost:5173
 ```
 
-Frontend runs at: **http://localhost:5173** (or 5174)
+### Verify Setup
 
-### **4. Access the App**
+1. **Backend Health Check**: http://localhost:8000/health
+```json
+   {
+     "status": "healthy",
+     "database": {
+       "cards": 22,
+       "routes": 242
+     }
+   }
+```
 
-Open your browser to **http://localhost:5173**
+2. **API Docs**: http://localhost:8000/docs
 
-You should see two tiles:
-- 🗺️ **Plan a Trip** - Calculate points for destinations
-- 🎯 **Calculate Points Gap** - Enter your points target
+3. **Frontend**: http://localhost:5173
 
 ---
 
-## 📁 Project Structure
+## 📦 Deployment Guide
 
-```
-points-optimizer-canada/
-├── backend/
-│   ├── main.py                 # FastAPI application
-│   ├── models.py               # Database models
-│   ├── database.py             # Database setup & seeding
-│   ├── requirements.txt        # Python dependencies
-│   ├── latest_cards_data.py    # Card data updater
-│   ├── view_database.py        # Database viewer CLI
-│   ├── add_more_data.py        # Add routes/cards
-│   └── points_optimizer.db     # SQLite database (local)
-│
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx             # Main React component
-│   │   ├── main.jsx            # Entry point
-│   │   └── index.css           # Global styles
-│   ├── public/
-│   ├── index.html              # HTML template (SEO optimized)
-│   ├── package.json            # Node dependencies
-│   ├── tailwind.config.js      # Tailwind configuration
-│   └── vite.config.js          # Vite configuration
-│
-├── docker-compose.yml          # Docker setup
-├── Dockerfile.backend          # Backend container
-├── Dockerfile.frontend         # Frontend container
-├── .gitignore                  # Git ignore rules
-└── README.md                   # This file
+### Initial Setup (One-Time)
+
+#### 1. Neon PostgreSQL Database
+
+1. Sign up at https://neon.tech
+2. Create new project: `pointspath-canada`
+3. Copy connection string (starts with `postgresql://`)
+4. Run SQL in Neon Console:
+```sql
+   -- Run backend/database.py CREATE TABLE statements
+   -- Run backend/latest_cards_data.py INSERT statements
+   -- Run complete_routes.sql (242 routes)
 ```
 
----
+#### 2. Render Backend Deployment
 
-## 🐳 Docker Deployment
+1. Sign up at https://render.com
+2. **New Web Service** → Connect GitHub repo
+3. **Settings**:
+   - Name: `pointspath-canada-api`
+   - Environment: `Python 3`
+   - Build Command: `pip install -r backend/requirements.txt`
+   - Start Command: `cd backend && python main.py`
+   - **Environment Variables**:
+```
+     DATABASE_URL=<Neon connection string>
+     ENVIRONMENT=production
+     ALLOWED_ORIGINS=https://pointspath-canada.vercel.app,https://pointspath-canada-git-main-<your-username>.vercel.app
+```
+4. Deploy → Copy API URL
 
-### **Using Docker Compose (Easiest)**
+#### 3. Vercel Frontend Deployment
 
+1. Sign up at https://vercel.com
+2. **Import Project** → Connect GitHub repo
+3. **Settings**:
+   - Framework Preset: `Vite`
+   - Root Directory: `frontend`
+   - Build Command: `npm run build`
+   - Output Directory: `dist`
+   - **Environment Variables**:
+```
+     VITE_API_URL=<Render API URL>
+```
+4. Deploy → App is live!
+
+### Continuous Deployment
+
+**Every time you push to GitHub:**
 ```bash
-# Build and run all containers
-docker-compose up --build
-
-# Run in background
-docker-compose up -d
-
-# Stop containers
-docker-compose down
-```
-
-Access at:
-- Frontend: **http://localhost:3000**
-- Backend: **http://localhost:8000**
-
-### **Individual Containers**
-
-**Backend:**
-```bash
-docker build -f Dockerfile.backend -t points-optimizer-backend .
-docker run -p 8000:8000 points-optimizer-backend
-```
-
-**Frontend:**
-```bash
-docker build -f Dockerfile.frontend -t points-optimizer-frontend .
-docker run -p 3000:80 points-optimizer-frontend
-```
----
-
-## 🔄 Updating Data
-
-### **Credit Card Bonuses (Weekly)**
-
-```bash
-cd backend
-
-# Edit latest_cards_data.py with new bonuses
-# Then run:
-python latest_cards_data.py
-
-# Restart backend
-python main.py
-```
-
-**Where to Check:**
-- r/churningcanada (daily updates)
-- princeoftravel.com/deals
-- rewardscanada.ca
-
-### **Routes & Points (Monthly)**
-
-```bash
-cd backend
-
-# Edit add_more_data.py or database.py
-# Then:
-rm points_optimizer.db
-python database.py
-python main.py
-```
-
----
-
-## 📤 Publishing to GitHub
-
-### **1. Create Repository**
-
-```bash
-# Initialize git (if not done)
-git init
-
-# Create .gitignore
-cat > .gitignore << 'EOF'
-# Python
-venv/
-__pycache__/
-*.pyc
-*.db
-.env
-
-# Node
-node_modules/
-dist/
-.DS_Store
-
-# IDE
-.vscode/
-.idea/
-EOF
-
-# Add all files
 git add .
-
-# Initial commit
-git commit -m "Initial commit: Points Optimizer Canada"
+git commit -m "Your changes"
+git push origin main
 ```
 
-### **2. Push to GitHub**
+- ✅ Vercel auto-deploys frontend (~30 seconds)
+- ✅ Render auto-deploys backend (~2-3 minutes)
 
-1. Go to [github.com](https://github.com)
-2. Click "New repository"
-3. Name: `points-optimizer-canada`
-4. **Don't** initialize with README (you have one)
-5. Create repository
+---
 
-Then in terminal:
-```bash
-git remote add origin https://github.com/nkulkarni8/points-optimizer-canada.git
-git branch -M main
-git push -u origin main
+## 📊 Database Schema
+
+### Credit Cards Table
+```sql
+id, name, issuer, program, earn_rate, annual_fee, 
+welcome_bonus, categories, transfer_partners, is_active
 ```
 
-### **3. Add Repository Details**
-
-On GitHub, add:
-- **Description:** "Free Canadian credit card points calculator and optimizer"
-- **Topics:** `aeroplan`, `credit-cards`, `canada`, `points`, `travel`, `fastapi`, `react`
-- **License:** MIT
-
----
-
-## 🔒 Environment Variables
-
-### **Backend (.env)**
-
-```bash
-DATABASE_URL=postgresql://user:pass@host/db
-PORT=8000
-ENVIRONMENT=production
-CORS_ORIGINS=https://your-frontend.vercel.app
+### Routes Table
+```sql
+id, from_city, to_city, distance_km, route_type,
+economy_points, premium_economy_points, business_points, 
+first_points, program
 ```
 
-### **Frontend (.env.production)**
+---
 
-```bash
-VITE_API_URL=https://your-backend.onrender.com
+## 🎯 API Endpoints
+
+### Health & Info
+- `GET /` - API info
+- `GET /health` - Health check with database stats
+
+### Flow 1: Trip Planning
+- `POST /calculate-points` - Calculate points for a trip
+- `POST /strategies` - Get earning strategies
+
+### Flow 2: Points Gap
+- `POST /calculate-gap` - Calculate points gap strategies
+
+### Data Access
+- `GET /cards` - List all credit cards (filter by program)
+- `GET /cards/{id}` - Get specific card
+- `GET /routes` - List all 242 routes
+
+**Full API Docs**: https://pointspath-canada-api.onrender.com/docs
+
+---
+
+## 🔧 Environment Variables
+
+### Backend (.env)
+```env
+# Database (use one)
+DATABASE_URL=sqlite:///./points_optimizer.db  # Local
+DATABASE_URL=postgresql://...                  # Production (Neon)
+
+# Environment
+ENVIRONMENT=development  # or 'production'
+
+# CORS (comma-separated, no spaces)
+ALLOWED_ORIGINS=http://localhost:5173,https://pointspath-canada.vercel.app
 ```
 
-**Security Note:** Never commit `.env` files! They're in `.gitignore`.
-
----
-
-## 🧪 Testing
-
-### **Backend Tests**
-
-```bash
-cd backend
-pytest tests/
+### Frontend (.env)
+```env
+# Backend API URL
+VITE_API_URL=http://localhost:8000  # Local
+VITE_API_URL=https://pointspath-canada-api.onrender.com  # Production
 ```
 
-### **Frontend Tests**
+---
 
-```bash
-cd frontend
-npm test
-```
+## 📝 Data Sources & Accuracy
 
-### **Manual Testing Checklist**
+### Points Estimates
+- Based on typical Aeroplan pricing (January 2026)
+- **ONE-WAY** estimates - multiply by 2 for round-trip
+- Actual prices vary by date, demand, and availability
+- Can range 50% below to 200% above estimates
+- **Always verify on Aeroplan.com before booking**
 
-- [ ] Both flows load without errors
-- [ ] Can calculate points for a trip
-- [ ] Can calculate points gap
-- [ ] Cards load from database
-- [ ] Input validation works (try negative numbers)
-- [ ] Mobile view looks good
-- [ ] Backend API docs work (http://localhost:8000/docs)
+### Credit Card Data
+- Welcome bonuses accurate as of January 2026
+- Bonuses change monthly - verify on bank websites
+- Annual fees and earn rates subject to change
+- Tool is educational - not financial advice
+
+### Flight Routes
+- 242 bidirectional routes covering major destinations
+- Does not include all possible city pairs
+- Focused on popular Canadian departure cities
 
 ---
 
-## 🤝 Contributing
+## 🐛 Known Issues & Limitations
 
-Contributions welcome! Please:
+### Render Free Tier
+- **Cold Start Delay**: API sleeps after 15 minutes of inactivity
+- **First Request**: Takes 20-30 seconds to wake up
+- **Subsequent Requests**: Instant
+- **Solution**: Upgrade to paid tier ($7/month) or accept delay
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+### Database ID Gaps
+- Credit card IDs start from 6, not 1 (due to previous deletions)
+- Routes IDs may not be sequential
+- **No functional impact** - just unique identifiers
 
----
-
-## 📝 Roadmap
-
-### **Phase 1: MVP** ✅ (Current)
-- [x] Two-flow interface
-- [x] Trip planning calculator
-- [x] Points gap calculator
-- [x] 18+ Canadian credit cards
-- [x] 20+ popular routes
-
-### **Phase 2: Enhancement** (Next 3 months)
-- [ ] User accounts (optional)
-- [ ] Save trip plans
-- [ ] Email notifications for bonus changes
-- [ ] Community price submissions
-- [ ] More cards (30+ total)
-- [ ] More routes (50+ total)
-
-### **Phase 3: Advanced** (6-12 months)
-- [ ] Real-time award availability API
-- [ ] AI-powered recommendations
-- [ ] Mobile app (React Native)
-- [ ] Premium features
-- [ ] Affiliate partnerships
-
----
-
-## 🐛 Known Issues
-
-- Backend sleeps on Render free tier (30-60s wake time on first request)
-- Route data is estimated (not real-time from airlines)
-- Limited to routes in database for Flow 1
-
----
-
-## 💡 FAQ
-
-**Q: Is this free to use?**  
-A: Yes! 100% free, no credit card required.
-
-**Q: Do you store my data?**  
-A: No personal data is stored. All calculations happen in real-time.
-
-**Q: How accurate are the points estimates?**  
-A: Credit card data is 100% current. Route points are typical estimates (±10-20%).
-
-**Q: Can I add my own cards?**  
-A: Currently admin-only, but we're building a submission feature!
-
-**Q: How often is data updated?**  
-A: Credit card bonuses updated bi-weekly, routes updated monthly.
-
----
-
-## 📧 Contact
-
-- **Issues:** [GitHub Issues](https://github.com/nkulkarni8/points-optimizer-canada/issues)
-- **Email:** kulkarni.nachiket8@gmail.com
 ---
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+This project is for educational purposes. Credit card data is publicly available information. Not affiliated with any bank, credit card issuer, or airline program.
 
 ---
 
 ## 🙏 Acknowledgments
 
-- **Data Sources:** Prince of Travel, Rewards Canada, Ratehub
-- **Community:** r/churningcanada
+- **Aeroplan** for points program data
+- **Canadian banks** for credit card information
+- **Vercel, Render, Neon** for free tier hosting
+- **Claude AI** for development assistance
+- **r/churningcanada** community for inspiration
 
 ---
 
-## ⭐ Star History
+## 📧 Contact
 
-If this project helped you, please give it a star! ⭐
+**GitHub**: [@nkulkarni8](https://github.com/nkulkarni8)  
+**Project Link**: https://github.com/nkulkarni8/pointspath-canada
 
 ---
 
-**Built with ❤️ for the Canadian points community** 🇨🇦
-
-*Not affiliated with any bank or credit card issuer*
+**Built with ❤️ for the Canadian travel hacking community**
 
 *Last Updated: January 2026*

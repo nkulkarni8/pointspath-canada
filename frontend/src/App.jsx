@@ -1,779 +1,986 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Plane, CreditCard, TrendingUp, Calendar, Users, MapPin, AlertCircle, Loader2, Target, Calculator } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plane, Calculator, ArrowLeft, MapPin, Calendar, Users, CreditCard, TrendingUp, AlertCircle } from 'lucide-react';
 import { API_URL } from './config';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
-const PointsOptimizer = () => {
-  const [selectedFlow, setSelectedFlow] = useState(null);
+function App() {
+  // Navigation state
+  const [currentView, setCurrentView] = useState('home'); // 'home', 'trip', 'gap'
   
-  const [tripFormData, setTripFormData] = useState({
-    from_city: 'Toronto',
-    to_city: 'London',
-    depart_date: '',
-    return_date: '',
-    passengers: 1,
-    travel_class: 'economy'
-  });
+  // Flow 1: Trip Planning State
+  const [fromCity, setFromCity] = useState('');
+  const [toCity, setToCity] = useState('');
+  const [departDate, setDepartDate] = useState('');
+  const [returnDate, setReturnDate] = useState('');
+  const [adults, setAdults] = useState(1);
+  const [children, setChildren] = useState(0);
+  const [travelClass, setTravelClass] = useState('economy');
+  const [tripResult, setTripResult] = useState(null);
+  const [isRoundTrip, setIsRoundTrip] = useState(false);
   
-  const [gapFormData, setGapFormData] = useState({
-    points_needed: '',
-    points_current: '',
-    timeline_months: 6,
-    selected_cards: [],
-    monthly_budget: ''
-  });
+  // Flow 2: Points Gap State
+  const [pointsNeeded, setPointsNeeded] = useState('');
+  const [pointsCurrent, setPointsCurrent] = useState('');
+  const [timeline, setTimeline] = useState(6);
+  const [selectedCards, setSelectedCards] = useState([]);
+  const [monthlyBudget, setMonthlyBudget] = useState('');
+  const [gapResult, setGapResult] = useState(null);
   
-  const [results, setResults] = useState(null);
+  // Shared state
   const [cards, setCards] = useState([]);
-  const [strategies, setStrategies] = useState([]);
+  const [routes, setRoutes] = useState([]);
+  const [availableCities, setAvailableCities] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [formErrors, setFormErrors] = useState({});
 
+  // Available cities for dropdown (extracted from routes)
+  const CANADIAN_CITIES = [
+    'Toronto', 'Vancouver', 'Montreal', 'Calgary', 'Edmonton', 'Ottawa', 'Halifax'
+  ];
+
+  const NORTH_AMERICAN_CITIES = [
+    'New York', 'Los Angeles', 'San Francisco', 'Boston', 'Miami', 'Cancun', 'Mexico City'
+  ];
+
+  const INTERNATIONAL_CITIES = [
+    'London', 'Paris', 'Frankfurt', 'Rome', 'Amsterdam',
+    'Tokyo', 'Hong Kong', 'Seoul', 'Singapore',
+    'Dubai', 'Tel Aviv',
+    'Sydney', 'Auckland',
+    'Sao Paulo', 'Buenos Aires',
+    'Barbados', 'Jamaica'
+  ];
+
+  const ALL_CITIES = [
+    ...CANADIAN_CITIES,
+    ...NORTH_AMERICAN_CITIES,
+    ...INTERNATIONAL_CITIES
+  ].sort();
+
+  // Load cards and routes on mount
   useEffect(() => {
-    fetchCards();
+    loadCards();
+    loadRoutes();
   }, []);
 
-  const fetchCards = async () => {
+  const loadCards = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/cards`);
-      if (!response.ok) throw new Error('Failed to fetch cards');
+      const response = await fetch(`${API_URL}/cards`);
+      if (!response.ok) throw new Error('Failed to load cards');
       const data = await response.json();
-      setCards(data);
+      setCards(data.cards || data);
     } catch (err) {
-      console.error('Error fetching cards:', err);
-      setError('Could not load credit cards. Make sure backend is running on ' + API_BASE_URL);
+      console.error('Error loading cards:', err);
+      setError(`Could not load credit cards. Make sure backend is running on ${API_URL}`);
     }
   };
 
-  const calculateTripPoints = async () => {
+  const loadRoutes = async () => {
+    try {
+      const response = await fetch(`${API_URL}/routes`);
+      if (!response.ok) throw new Error('Failed to load routes');
+      const data = await response.json();
+      setRoutes(data.routes || data);
+    } catch (err) {
+      console.error('Error loading routes:', err);
+    }
+  };
+
+  // Reset all form data when changing views
+  const resetForms = () => {
+    // Flow 1 reset
+    setFromCity('');
+    setToCity('');
+    setDepartDate('');
+    setReturnDate('');
+    setAdults(1);
+    setChildren(0);
+    setTravelClass('economy');
+    setTripResult(null);
+    setIsRoundTrip(false);
+    
+    // Flow 2 reset
+    setPointsNeeded('');
+    setPointsCurrent('');
+    setTimeline(6);
+    setSelectedCards([]);
+    setMonthlyBudget('');
+    setGapResult(null);
+    
+    // Clear errors
+    setError(null);
+    setFormErrors({});
+  };
+
+  const navigateTo = (view) => {
+    resetForms();
+    setCurrentView(view);
+  };
+
+  // Flow 1: Validate Trip Form
+  const validateTripForm = () => {
+    const errors = {};
+    
+    if (!fromCity) {
+      errors.fromCity = 'Origin city is required';
+    }
+    
+    if (!toCity) {
+      errors.toCity = 'Destination city is required';
+    }
+    
+    if (fromCity === toCity) {
+      errors.toCity = 'Destination must be different from origin';
+    }
+    
+    if (!departDate) {
+      errors.departDate = 'Departure date is required';
+    } else {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const depart = new Date(departDate);
+      
+      if (depart < today) {
+        errors.departDate = 'Departure date must be in the future';
+      }
+    }
+    
+    // Validate return date if provided
+    if (returnDate) {
+      const depart = new Date(departDate);
+      const ret = new Date(returnDate);
+      
+      if (ret < depart) {
+        errors.returnDate = 'Return date must be after departure date';
+      }
+    }
+    
+    const totalPassengers = adults + children;
+    if (totalPassengers < 1 || totalPassengers > 9) {
+      errors.passengers = 'Total passengers must be between 1 and 9';
+    }
+    
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Flow 1: Calculate Points
+  const calculatePoints = async (e) => {
+    e.preventDefault();
+    
+    if (!validateTripForm()) {
+      return;
+    }
+    
     setLoading(true);
     setError(null);
     
     try {
-      const pointsResponse = await fetch(`${API_BASE_URL}/calculate-points`, {
+      const totalPassengers = adults + children;
+      
+      const response = await fetch(`${API_URL}/calculate-points`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(tripFormData)
+        body: JSON.stringify({
+          from_city: fromCity,
+          to_city: toCity,
+          depart_date: departDate,
+          return_date: returnDate || null,
+          passengers: totalPassengers,
+          travel_class: travelClass
+        })
       });
       
-      if (!pointsResponse.ok) {
-        const errorData = await pointsResponse.json();
+      if (!response.ok) {
+        const errorData = await response.json();
         throw new Error(errorData.detail || 'Failed to calculate points');
       }
       
-      const pointsData = await pointsResponse.json();
-      
-      const strategiesResponse = await fetch(`${API_BASE_URL}/strategies`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(tripFormData)
-      });
-      
-      if (!strategiesResponse.ok) {
-        throw new Error('Failed to fetch strategies');
-      }
-      
-      const strategiesData = await strategiesResponse.json();
-      
-      setResults(pointsData);
-      setStrategies(strategiesData);
+      const data = await response.json();
+      setTripResult(data);
+      setIsRoundTrip(!!returnDate);
     } catch (err) {
       setError(err.message);
-      console.error('Error:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const calculatePointsGap = async () => {
+  // Flow 2: Validate Gap Form
+  const validateGapForm = () => {
+    const errors = {};
+    
+    if (!pointsNeeded || pointsNeeded <= 0) {
+      errors.pointsNeeded = 'Points needed must be greater than 0';
+    }
+    
+    if (!pointsCurrent || pointsCurrent < 0) {
+      errors.pointsCurrent = 'Current points must be 0 or greater';
+    }
+    
+    if (pointsCurrent >= pointsNeeded) {
+      errors.pointsCurrent = 'Current points must be less than points needed';
+    }
+    
+    if (selectedCards.length === 0) {
+      errors.selectedCards = 'Please select at least one credit card';
+    }
+    
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Flow 2: Calculate Gap
+  const calculateGap = async (e) => {
+    e.preventDefault();
+    
+    if (!validateGapForm()) {
+      return;
+    }
+    
     setLoading(true);
     setError(null);
     
     try {
-      // Call the backend API for detailed calculation
-      const response = await fetch(`${API_BASE_URL}/calculate-gap`, {
+      const response = await fetch(`${API_URL}/calculate-gap`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          points_needed: parseInt(gapFormData.points_needed),
-          points_current: parseInt(gapFormData.points_current || 0),
-          timeline_months: parseInt(gapFormData.timeline_months),
-          card_ids: gapFormData.selected_cards.map(id => parseInt(id)),
-          monthly_budget: gapFormData.monthly_budget ? parseInt(gapFormData.monthly_budget) : null
+          points_needed: parseInt(pointsNeeded),
+          points_current: parseInt(pointsCurrent),
+          timeline_months: timeline,
+          card_ids: selectedCards,
+          monthly_budget: monthlyBudget ? parseInt(monthlyBudget) : null
         })
       });
-
+      
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.detail || 'Failed to calculate gap');
       }
-
+      
       const data = await response.json();
-      
-      setResults({
-        type: 'gap',
-        pointsGap: data.points_gap,
-        monthlyTarget: data.monthly_points_target,
-        timeline: data.timeline_months,
-        strategies: data.strategies,
-        achievable: data.is_achievable,
-        totalMonthlySpend: data.total_monthly_spend
-      });
-      
+      setGapResult(data);
     } catch (err) {
-      setError(err.message || 'Please fill in all required fields');
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  if (selectedFlow === null) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-12 pt-8">
-            <div className="flex items-center justify-center mb-4">
-              <Plane className="w-12 h-12 text-indigo-600 mr-3" />
-              <h1 className="text-4xl font-bold text-gray-800">Points Optimizer Canada</h1>
-            </div>
-            <p className="text-gray-600 text-lg mb-2">Choose how you'd like to plan your points strategy</p>
-            <div className="text-sm text-gray-500">
-              🎯 Connected to: {API_BASE_URL}
-            </div>
-          </div>
-
-          {error && (
-            <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6 rounded-lg shadow max-w-3xl mx-auto">
-              <div className="flex items-start">
-                <AlertCircle className="w-5 h-5 text-red-500 mr-3 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="text-red-800 font-medium">Error</p>
-                  <p className="text-red-700 text-sm mt-1">{error}</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="grid md:grid-cols-2 gap-8 px-4">
-            <div 
-              onClick={() => setSelectedFlow('trip')}
-              className="bg-white rounded-2xl shadow-xl p-8 hover:shadow-2xl transition-all cursor-pointer border-2 border-transparent hover:border-indigo-500 group"
-            >
-              <div className="flex items-center justify-center w-16 h-16 bg-indigo-100 rounded-full mb-6 group-hover:bg-indigo-200 transition-colors">
-                <MapPin className="w-8 h-8 text-indigo-600" />
-              </div>
-              
-              <h2 className="text-2xl font-bold text-gray-800 mb-4">Plan a Trip</h2>
-              <p className="text-gray-600 mb-6">
-                Know where you want to go? Calculate how many points you need and get smart earning strategies.
-              </p>
-              
-              <div className="space-y-3 text-sm text-gray-700">
-                <div className="flex items-start">
-                  <span className="text-green-500 mr-2">✓</span>
-                  <span>Calculate points for specific routes</span>
-                </div>
-                <div className="flex items-start">
-                  <span className="text-green-500 mr-2">✓</span>
-                  <span>Compare different travel classes</span>
-                </div>
-                <div className="flex items-start">
-                  <span className="text-green-500 mr-2">✓</span>
-                  <span>Get personalized earning strategies</span>
-                </div>
-              </div>
-              
-              <button className="mt-8 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors">
-                Start Planning Trip →
-              </button>
-            </div>
-
-            <div 
-              onClick={() => setSelectedFlow('gap')}
-              className="bg-white rounded-2xl shadow-xl p-8 hover:shadow-2xl transition-all cursor-pointer border-2 border-transparent hover:border-purple-500 group"
-            >
-              <div className="flex items-center justify-center w-16 h-16 bg-purple-100 rounded-full mb-6 group-hover:bg-purple-200 transition-colors">
-                <Target className="w-8 h-8 text-purple-600" />
-              </div>
-              
-              <h2 className="text-2xl font-bold text-gray-800 mb-4">Calculate Points Gap</h2>
-              <p className="text-gray-600 mb-6">
-                Already know how many points you need? Find out exactly how to earn them with your cards.
-              </p>
-              
-              <div className="space-y-3 text-sm text-gray-700">
-                <div className="flex items-start">
-                  <span className="text-green-500 mr-2">✓</span>
-                  <span>Set your points target and timeline</span>
-                </div>
-                <div className="flex items-start">
-                  <span className="text-green-500 mr-2">✓</span>
-                  <span>Use your existing credit cards</span>
-                </div>
-                <div className="flex items-start">
-                  <span className="text-green-500 mr-2">✓</span>
-                  <span>Get month-by-month spending plan</span>
-                </div>
-              </div>
-              
-              <button className="mt-8 w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors">
-                Calculate My Gap →
-              </button>
-            </div>
-          </div>
-
-          <div className="text-center mt-12 pb-8 text-gray-500 text-sm">
-            <p className="mb-2">
-              {cards.length > 0 ? '✅' : '⏳'} Backend API {cards.length > 0 ? 'Connected' : 'Loading...'} | 
-              🎯 Real-time calculations | 
-              🇨🇦 Made for Canadians
-            </p>
-            <p className="text-xs text-gray-400 mt-3 max-w-3xl mx-auto">
-              <strong>Data Accuracy:</strong> Credit card offers and earning rates updated January 2026. 
-              Flight points are estimates based on typical Aeroplan pricing. This tool is for educational 
-              purposes only and not financial advice. Always verify current offers on official bank and 
-              airline websites.
-            </p>
-          </div>
-        </div>
-      </div>
+  // Toggle card selection
+  const toggleCardSelection = (cardId) => {
+    setSelectedCards(prev => 
+      prev.includes(cardId) 
+        ? prev.filter(id => id !== cardId)
+        : [...prev, cardId]
     );
-  }
+  };
 
-  if (selectedFlow === 'gap') {
+  // Get today's date in YYYY-MM-DD format
+  const getTodayDate = () => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  };
+
+  // ============================================================================
+  // HOME VIEW
+  // ============================================================================
+  
+  if (currentView === 'home') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-        <div className="max-w-4xl mx-auto">
-          <div className="mb-6 pt-8">
-            <button 
-              onClick={() => {
-                setSelectedFlow(null);
-                setResults(null);
-              }}
-              className="text-purple-600 hover:text-purple-800 flex items-center"
-            >
-              ← Back to Home
-            </button>
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+        {/* Header */}
+        <header className="bg-white shadow-sm border-b border-gray-200">
+          <div className="max-w-7xl mx-auto px-4 py-6">
+            <div className="flex items-center gap-3">
+              {/* Canada Flag - Using red box with maple leaf */}
+              <div className="bg-red-600 text-white w-14 h-14 rounded-xl flex items-center justify-center shadow-lg" style={{ fontSize: '2rem' }}>
+                🍁
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                  PointsPath Canada
+                </h1>
+                <p className="text-gray-600 text-sm">Your path to free travel with Canadian credit cards</p>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Main Content */}
+        <main className="max-w-7xl mx-auto px-4 py-12">
+          {/* Hero Section */}
+          <div className="text-center mb-12">
+            <h2 className="text-4xl font-bold text-gray-900 mb-4">
+              Maximize Your Credit Card Points
+            </h2>
+            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+              Calculate points needed for your dream trip and discover how to earn them with your Canadian credit cards
+            </p>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
-            <h2 className="text-2xl font-semibold text-gray-800 mb-6">Calculate Your Points Gap</h2>
-            
-            <div className="bg-green-50 border-l-4 border-green-500 p-4 mb-6 rounded">
-              <p className="text-green-800 text-sm">
-                ✅ <strong>Using real credit card data!</strong> All card bonuses and earning rates are current as of January 2026. Enter your exact points requirement from the airline website for accurate earning strategies.
-              </p>
-            </div>
-            
-            <div className="space-y-6">
-              <div>
-                <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
-                  <Target className="w-4 h-4 mr-2 text-purple-600" />
-                  How many points do you need?
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="e.g., 80000"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  value={gapFormData.points_needed}
-                  onChange={(e) => {
-                    const value = e.target.value.replace(/\D/g, '');
-                    setGapFormData(prev => ({...prev, points_needed: value}));
-                  }}
-                />
-                <p className="text-xs text-gray-500 mt-1">Found this from an airline website or booking tool</p>
-              </div>
-
-              <div>
-                <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
-                  <CreditCard className="w-4 h-4 mr-2 text-purple-600" />
-                  How many points do you currently have?
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="e.g., 25000"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  value={gapFormData.points_current}
-                  onChange={(e) => {
-                    const value = e.target.value.replace(/\D/g, '');
-                    setGapFormData(prev => ({...prev, points_current: value}));
-                  }}
-                />
-              </div>
-
-              <div>
-                <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
-                  <Calendar className="w-4 h-4 mr-2 text-purple-600" />
-                  Timeline (months)
-                </label>
-                <select
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  value={gapFormData.timeline_months}
-                  onChange={(e) => setGapFormData(prev => ({...prev, timeline_months: e.target.value}))}
-                >
-                  {[1,2,3,4,5,6,7,8,9,10,11,12,15,18,24].map(num => (
-                    <option key={num} value={num}>{num} {num === 1 ? 'month' : 'months'}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
-                  <CreditCard className="w-4 h-4 mr-2 text-purple-600" />
-                  Which credit cards do you have? (Select all that apply)
-                </label>
-                <div className="border border-gray-300 rounded-lg p-4 max-h-64 overflow-y-auto">
-                  {cards.map(card => (
-                    <label key={card.id} className="flex items-center py-2 hover:bg-gray-50 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="mr-3 h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
-                        value={card.id}
-                        checked={gapFormData.selected_cards.includes(card.id.toString())}
-                        onChange={(e) => {
-                          const cardId = e.target.value;
-                          setGapFormData(prev => ({
-                            ...prev,
-                            selected_cards: e.target.checked
-                              ? [...prev.selected_cards, cardId]
-                              : prev.selected_cards.filter(id => id !== cardId)
-                          }));
-                        }}
-                      />
-                      <span className="text-sm text-gray-700">{card.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
-                  <Calculator className="w-4 h-4 mr-2 text-purple-600" />
-                  Monthly spending budget (optional)
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="e.g., 3000"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  value={gapFormData.monthly_budget}
-                  onChange={(e) => {
-                    const value = e.target.value.replace(/\D/g, '');
-                    setGapFormData(prev => ({...prev, monthly_budget: value}));
-                  }}
-                />
-                <p className="text-xs text-gray-500 mt-1">We'll check if the plan fits your budget</p>
+          {/* Disclaimer */}
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-12 max-w-4xl mx-auto">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-yellow-800">
+                <p className="font-semibold mb-2">Important Disclaimers:</p>
+                <ul className="space-y-1 list-disc list-inside">
+                  <li><strong>Points estimates</strong> based on typical Aeroplan pricing (January 2026) - actual prices vary by date and availability</li>
+                  <li><strong>Welcome bonuses change monthly</strong> - always verify current offers on official bank websites</li>
+                  <li><strong>Educational tool only</strong> - not financial or investment advice</li>
+                  <li><strong>Data freshness:</strong> Card offers updated January 2026</li>
+                  <li><strong>Always confirm</strong> points requirements on airline websites before booking</li>
+                </ul>
               </div>
             </div>
+          </div>
 
+          {/* Feature Cards */}
+          <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+            {/* Flow 1: Trip Planning */}
             <button
-              onClick={calculatePointsGap}
-              disabled={loading || !gapFormData.points_needed || gapFormData.selected_cards.length === 0}
-              className="w-full mt-8 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-4 px-6 rounded-lg transition-colors flex items-center justify-center"
+              onClick={() => navigateTo('trip')}
+              className="group bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 p-8 text-left border-2 border-transparent hover:border-indigo-500"
             >
-              {loading ? (
-                <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Calculating...
-                </>
-              ) : (
-                <>
-                  <Calculator className="w-5 h-5 mr-2" />
-                  Calculate My Spending Plan
-                </>
-              )}
+              <div className="bg-indigo-100 w-16 h-16 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                <Plane className="w-8 h-8 text-indigo-600" />
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 mb-3">Plan a Trip</h3>
+              <p className="text-gray-600 mb-4">
+                Calculate how many points you need for your next adventure. Select your route, travel dates, and class to get instant results.
+              </p>
+              <div className="flex items-center text-indigo-600 font-semibold group-hover:gap-3 gap-2 transition-all">
+                Start Planning
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+              </div>
+            </button>
+
+            {/* Flow 2: Points Gap */}
+            <button
+              onClick={() => navigateTo('gap')}
+              className="group bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 p-8 text-left border-2 border-transparent hover:border-purple-500"
+            >
+              <div className="bg-purple-100 w-16 h-16 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                <Calculator className="w-8 h-8 text-purple-600" />
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 mb-3">Calculate Points Gap</h3>
+              <p className="text-gray-600 mb-4">
+                Found the perfect flight? Enter the points needed and we'll show you exactly how to earn them with your credit cards.
+              </p>
+              <div className="flex items-center text-purple-600 font-semibold group-hover:gap-3 gap-2 transition-all">
+                Calculate Strategy
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+              </div>
             </button>
           </div>
 
-          {results && results.type === 'gap' && (
-            <div className="space-y-6 animate-fade-in">
-              <div className="bg-white rounded-2xl shadow-xl p-8">
-                <h3 className="text-2xl font-bold text-gray-800 mb-6">Your Points Plan</h3>
-                
-                <div className="bg-green-50 border-l-4 border-green-500 p-3 mb-4 rounded">
-                  <p className="text-green-800 text-xs">
-                    ✅ <strong>Accurate calculations</strong> based on real credit card earning rates (updated January 2026). Strategies assume typical spending patterns in bonus categories.
-                  </p>
-                </div>
-                
-                <div className="grid md:grid-cols-3 gap-6 mb-8">
-                  <div className="bg-purple-50 rounded-xl p-6 text-center">
-                    <p className="text-sm text-gray-600 mb-2">Points Gap</p>
-                    <p className="text-3xl font-bold text-purple-600">
-                      {results.pointsGap.toLocaleString()}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-2">points to earn</p>
-                  </div>
-                  <div className="bg-blue-50 rounded-xl p-6 text-center">
-                    <p className="text-sm text-gray-600 mb-2">Monthly Target</p>
-                    <p className="text-3xl font-bold text-blue-600">
-                      {results.monthlyTarget.toLocaleString()}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-2">points/month</p>
-                  </div>
-                  <div className="bg-green-50 rounded-xl p-6 text-center">
-                    <p className="text-sm text-gray-600 mb-2">Timeline</p>
-                    <p className="text-3xl font-bold text-green-600">
-                      {results.timeline}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-2">months</p>
-                  </div>
-                </div>
-
-                {results.achievable === false && (
-                  <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
-                    <p className="text-yellow-800 text-sm">
-                      ⚠️ The required spending exceeds your monthly budget. Consider extending your timeline or getting additional cards.
-                    </p>
-                  </div>
-                )}
-
-                <h4 className="text-xl font-bold text-gray-800 mb-4">Recommended Spending Strategy</h4>
-                
-                {results.strategies.map((strategy, idx) => (
-                  <div key={idx} className="border-2 border-purple-100 rounded-xl p-6 mb-6">
-                    <div className="flex justify-between items-center mb-6">
-                      <h5 className="text-lg font-semibold text-gray-800">{strategy.card_name}</h5>
-                      <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-sm">
-                        Avg: {strategy.avg_earn_rate}x points
-                      </span>
-                    </div>
-                    
-                    {/* Category Breakdown */}
-                    <div className="mb-6">
-                      <p className="text-sm font-medium text-gray-700 mb-3">
-                        💡 <strong>How to Maximize Points:</strong> Spend strategically in these categories
-                      </p>
-                      <div className="space-y-3">
-                        {strategy.category_breakdown.map((cat, catIdx) => (
-                          <div key={catIdx} className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg p-4 border border-purple-200">
-                            <div className="flex justify-between items-center mb-2">
-                              <div className="flex items-center">
-                                <span className="text-2xl mr-3">
-                                  {cat.category === 'Groceries' ? '🛒' : 
-                                   cat.category === 'Dining' ? '🍽️' : 
-                                   cat.category === 'Gas' ? '⛽' : 
-                                   cat.category === 'Travel' ? '✈️' : 
-                                   cat.category === 'Entertainment' ? '🎬' : 
-                                   cat.category === 'Transit' ? '🚇' : 
-                                   cat.category === 'Air Canada' ? '🛫' : '💳'}
-                                </span>
-                                <div>
-                                  <p className="font-semibold text-gray-800">{cat.category}</p>
-                                  <p className="text-xs text-gray-600">
-                                    {cat.multiplier}x earn rate
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-lg font-bold text-purple-600">
-                                  ${cat.monthly_spend.toLocaleString()}<span className="text-sm text-gray-500">/mo</span>
-                                </p>
-                                <p className="text-xs text-green-600 font-medium">
-                                  +{cat.monthly_points.toLocaleString()} pts/mo
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Summary Stats */}
-                    <div className="grid md:grid-cols-3 gap-4 pt-4 border-t border-gray-200">
-                      <div className="bg-white rounded-lg p-4 border border-gray-200">
-                        <p className="text-xs text-gray-500 mb-1">Monthly Spend Total</p>
-                        <p className="text-xl font-bold text-gray-800">${strategy.monthly_spend_needed.toLocaleString()}</p>
-                      </div>
-                      <div className="bg-white rounded-lg p-4 border border-gray-200">
-                        <p className="text-xs text-gray-500 mb-1">Total Over {results.timeline}mo</p>
-                        <p className="text-xl font-bold text-gray-800">${strategy.total_spend_needed.toLocaleString()}</p>
-                      </div>
-                      <div className="bg-white rounded-lg p-4 border border-gray-200">
-                        <p className="text-xs text-gray-500 mb-1">Total Points Earned</p>
-                        <p className="text-xl font-bold text-green-600">{strategy.total_points_earned.toLocaleString()}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                <div className="mt-6 p-4 bg-green-50 rounded-lg">
-                  <p className="text-green-800 font-semibold flex items-center">
-                    <span className="mr-2">✅</span>
-                    You'll reach your {gapFormData.points_needed} points goal in {results.timeline} months!
-                  </p>
-                </div>
-              </div>
+          {/* Stats Section */}
+          <div className="mt-16 grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
+            <div className="text-center">
+              <div className="text-4xl font-bold text-indigo-600 mb-2">22</div>
+              <div className="text-gray-600">Canadian Credit Cards</div>
             </div>
-          )}
-        </div>
+            <div className="text-center">
+              <div className="text-4xl font-bold text-purple-600 mb-2">242</div>
+              <div className="text-gray-600">Popular Routes</div>
+            </div>
+            <div className="text-center">
+              <div className="text-4xl font-bold text-pink-600 mb-2">Free</div>
+              <div className="text-gray-600">Always Free to Use</div>
+            </div>
+          </div>
+        </main>
+
+        {/* Footer */}
+        <footer className="bg-gray-900 text-gray-300 py-8 mt-16">
+          <div className="max-w-7xl mx-auto px-4 text-center text-sm">
+            <p className="mb-2">© 2026 PointsPath Canada • Not affiliated with any bank or credit card issuer</p>
+            <p className="text-gray-500">Built with ❤️ for the Canadian travel hacking community</p>
+          </div>
+        </footer>
       </div>
     );
   }
 
-  // Trip planning flow...
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="max-w-6xl mx-auto">
-        <div className="mb-6 pt-8">
-          <button 
-            onClick={() => {
-              setSelectedFlow(null);
-              setResults(null);
-            }}
-            className="text-indigo-600 hover:text-indigo-800 flex items-center"
-          >
-            ← Back to Home
-          </button>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
-          <h2 className="text-2xl font-semibold text-gray-800 mb-6">Plan Your Trip</h2>
-          
-          <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6 rounded">
-            <p className="text-blue-800 text-sm">
-              ℹ️ <strong>Points estimates</strong> are based on typical Aeroplan award pricing as of January 2026. Actual redemption costs may vary based on availability, dates, and dynamic pricing. Always verify on Aeroplan.com before booking.
-            </p>
+  // ============================================================================
+  // FLOW 1: TRIP PLANNING VIEW
+  // ============================================================================
+  
+  if (currentView === 'trip') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+        {/* Header */}
+        <header className="bg-white shadow-sm border-b border-gray-200">
+          <div className="max-w-7xl mx-auto px-4 py-4">
+            <button
+              onClick={() => navigateTo('home')}
+              className="flex items-center gap-2 text-gray-600 hover:text-indigo-600 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5" />
+              <span className="font-medium">Back to Home</span>
+            </button>
           </div>
-          
-          <div className="grid md:grid-cols-2 gap-6">
-            <div>
-              <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
-                <MapPin className="w-4 h-4 mr-2 text-indigo-600" />
-                From City
-              </label>
-              <select
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                value={tripFormData.from_city}
-                onChange={(e) => setTripFormData({...tripFormData, from_city: e.target.value})}
-              >
-                <option value="Toronto">Toronto</option>
-                <option value="Vancouver">Vancouver</option>
-                <option value="Montreal">Montreal</option>
-                <option value="Calgary">Calgary</option>
-              </select>
+        </header>
+
+        <main className="max-w-4xl mx-auto px-4 py-12">
+          <div className="bg-white rounded-2xl shadow-xl p-8">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="bg-indigo-100 w-12 h-12 rounded-xl flex items-center justify-center">
+                <Plane className="w-6 h-6 text-indigo-600" />
+              </div>
+              <div>
+                <h2 className="text-3xl font-bold text-gray-900">Plan Your Trip</h2>
+                <p className="text-gray-600">Calculate points needed for your journey</p>
+              </div>
             </div>
 
-            <div>
-              <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
-                <MapPin className="w-4 h-4 mr-2 text-indigo-600" />
-                To City
-              </label>
-              <select
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                value={tripFormData.to_city}
-                onChange={(e) => setTripFormData({...tripFormData, to_city: e.target.value})}
-              >
-                <option value="London">London</option>
-                <option value="Paris">Paris</option>
-                <option value="Tokyo">Tokyo</option>
-                <option value="New York">New York</option>
-                <option value="Vancouver">Vancouver</option>
-              </select>
+            {/* Disclaimer */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+              <p className="text-sm text-blue-800">
+                <strong>Note:</strong> Points shown are ONE-WAY estimates based on typical Aeroplan pricing. 
+                Always verify on airline websites before booking.
+              </p>
             </div>
 
-            <div>
-              <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
-                <Calendar className="w-4 h-4 mr-2 text-indigo-600" />
-                Departure Date
-              </label>
-              <input
-                type="date"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                value={tripFormData.depart_date}
-                onChange={(e) => setTripFormData({...tripFormData, depart_date: e.target.value})}
-              />
-            </div>
-
-            <div>
-              <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
-                <Calendar className="w-4 h-4 mr-2 text-indigo-600" />
-                Return Date (Optional)
-              </label>
-              <input
-                type="date"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                value={tripFormData.return_date}
-                onChange={(e) => setTripFormData({...tripFormData, return_date: e.target.value})}
-              />
-            </div>
-
-            <div>
-              <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
-                <Users className="w-4 h-4 mr-2 text-indigo-600" />
-                Passengers
-              </label>
-              <select
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                value={tripFormData.passengers}
-                onChange={(e) => setTripFormData({...tripFormData, passengers: parseInt(e.target.value)})}
-              >
-                {[1,2,3,4,5,6].map(num => (
-                  <option key={num} value={num}>{num} {num === 1 ? 'Passenger' : 'Passengers'}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
-                <Plane className="w-4 h-4 mr-2 text-indigo-600" />
-                Travel Class
-              </label>
-              <select
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                value={tripFormData.travel_class}
-                onChange={(e) => setTripFormData({...tripFormData, travel_class: e.target.value})}
-              >
-                <option value="economy">Economy</option>
-                <option value="premium_economy">Premium Economy</option>
-                <option value="business">Business</option>
-                <option value="first">First Class</option>
-              </select>
-            </div>
-          </div>
-
-          <button
-            onClick={calculateTripPoints}
-            disabled={loading}
-            className="w-full mt-8 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-4 px-6 rounded-lg transition-colors flex items-center justify-center"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                Calculating...
-              </>
-            ) : (
-              <>
-                <TrendingUp className="w-5 h-5 mr-2" />
-                Calculate Points & Get Strategy
-              </>
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-red-800">{error}</div>
+                </div>
+              </div>
             )}
-          </button>
-        </div>
 
-        {results && results.total_points && (
-          <div className="space-y-6 animate-fade-in">
-            <div className="bg-white rounded-2xl shadow-xl p-8">
-              <h3 className="text-2xl font-bold text-gray-800 mb-6">Points Required</h3>
-              
-              <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4 rounded">
-                <p className="text-yellow-800 text-xs">
-                  💡 These are estimated points based on typical Aeroplan pricing. Check Aeroplan.com for exact availability and pricing for your travel dates.
+            <form onSubmit={calculatePoints} className="space-y-6">
+              {/* Route - Dropdown */}
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <MapPin className="w-4 h-4 inline mr-1" />
+                    From
+                  </label>
+                  <select
+                    value={fromCity}
+                    onChange={(e) => setFromCity(e.target.value)}
+                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
+                      formErrors.fromCity ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                  >
+                    <option value="">Select origin city</option>
+                    <optgroup label="Canada">
+                      {CANADIAN_CITIES.map(city => (
+                        <option key={city} value={city}>{city}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="North America">
+                      {NORTH_AMERICAN_CITIES.map(city => (
+                        <option key={city} value={city}>{city}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="International">
+                      {INTERNATIONAL_CITIES.map(city => (
+                        <option key={city} value={city}>{city}</option>
+                      ))}
+                    </optgroup>
+                  </select>
+                  {formErrors.fromCity && (
+                    <p className="text-red-500 text-sm mt-1">{formErrors.fromCity}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <MapPin className="w-4 h-4 inline mr-1" />
+                    To
+                  </label>
+                  <select
+                    value={toCity}
+                    onChange={(e) => setToCity(e.target.value)}
+                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
+                      formErrors.toCity ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                  >
+                    <option value="">Select destination city</option>
+                    <optgroup label="Canada">
+                      {CANADIAN_CITIES.map(city => (
+                        <option key={city} value={city}>{city}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="North America">
+                      {NORTH_AMERICAN_CITIES.map(city => (
+                        <option key={city} value={city}>{city}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="International">
+                      {INTERNATIONAL_CITIES.map(city => (
+                        <option key={city} value={city}>{city}</option>
+                      ))}
+                    </optgroup>
+                  </select>
+                  {formErrors.toCity && (
+                    <p className="text-red-500 text-sm mt-1">{formErrors.toCity}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Dates */}
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <Calendar className="w-4 h-4 inline mr-1" />
+                    Departure Date
+                  </label>
+                  <input
+                    type="date"
+                    value={departDate}
+                    onChange={(e) => setDepartDate(e.target.value)}
+                    min={getTodayDate()}
+                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
+                      formErrors.departDate ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                  />
+                  {formErrors.departDate && (
+                    <p className="text-red-500 text-sm mt-1">{formErrors.departDate}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <Calendar className="w-4 h-4 inline mr-1" />
+                    Return Date <span className="text-gray-500 text-xs">(Optional)</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={returnDate}
+                    onChange={(e) => setReturnDate(e.target.value)}
+                    min={departDate || getTodayDate()}
+                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
+                      formErrors.returnDate ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                  />
+                  {formErrors.returnDate && (
+                    <p className="text-red-500 text-sm mt-1">{formErrors.returnDate}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Passengers */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  <Users className="w-4 h-4 inline mr-1" />
+                  Passengers
+                </label>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-2">Adults (18+)</label>
+                    <select
+                      value={adults}
+                      onChange={(e) => setAdults(parseInt(e.target.value))}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    >
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+                        <option key={num} value={num}>{num}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-2">Children (0-17)</label>
+                    <select
+                      value={children}
+                      onChange={(e) => setChildren(parseInt(e.target.value))}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    >
+                      {[0, 1, 2, 3, 4, 5, 6, 7, 8].map(num => (
+                        <option key={num} value={num}>{num}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                {formErrors.passengers && (
+                  <p className="text-red-500 text-sm mt-2">{formErrors.passengers}</p>
+                )}
+                <p className="text-sm text-gray-500 mt-2">
+                  Total passengers: {adults + children} (max 9)
                 </p>
               </div>
-              
-              <div className="grid md:grid-cols-3 gap-6">
-                <div className="bg-indigo-50 rounded-xl p-6 text-center">
-                  <p className="text-sm text-gray-600 mb-2">Total Points Needed</p>
-                  <p className="text-3xl font-bold text-indigo-600">
-                    {results.total_points.toLocaleString()}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-2">
-                    for {tripFormData.passengers} {tripFormData.passengers === 1 ? 'passenger' : 'passengers'}
-                  </p>
-                </div>
-                <div className="bg-green-50 rounded-xl p-6 text-center">
-                  <p className="text-sm text-gray-600 mb-2">Per Passenger</p>
-                  <p className="text-3xl font-bold text-green-600">
-                    {results.points_per_person.toLocaleString()}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-2">points each way</p>
-                </div>
-                <div className="bg-purple-50 rounded-xl p-6 text-center">
-                  <p className="text-sm text-gray-600 mb-2">Travel Class</p>
-                  <p className="text-3xl font-bold text-purple-600 capitalize">
-                    {results.travel_class.replace('_', ' ')}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-2">
-                    {tripFormData.from_city} → {tripFormData.to_city}
-                  </p>
-                </div>
-              </div>
-            </div>
 
-            {strategies.length > 0 && (
-              <div className="bg-white rounded-2xl shadow-xl p-8">
-                <h3 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
-                  <CreditCard className="w-6 h-6 mr-3 text-indigo-600" />
-                  Smart Earning Strategies
-                </h3>
-                
-                {strategies.map((strategy, idx) => (
-                  <div key={idx} className="border-2 border-indigo-100 rounded-xl p-6 mb-4 hover:border-indigo-300 transition-all hover:shadow-md">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="flex-1">
-                        <h4 className="text-lg font-semibold text-gray-800 mb-2">
-                          Strategy {idx + 1}: {strategy.cards.join(' + ')}
-                        </h4>
-                        <p className="text-gray-600 text-sm">{strategy.description}</p>
-                      </div>
-                      <span className="bg-indigo-100 text-indigo-700 px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap ml-4">
-                        ~{strategy.months_needed} {strategy.months_needed === 1 ? 'month' : 'months'}
-                      </span>
-                    </div>
-                    
-                    <div className="grid md:grid-cols-3 gap-4 mt-4">
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <p className="text-xs text-gray-500 mb-1">Monthly Spend</p>
-                        <p className="text-xl font-bold text-gray-800">${strategy.monthly_spend.toLocaleString()}</p>
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <p className="text-xs text-gray-500 mb-1">Total Spend Needed</p>
-                        <p className="text-xl font-bold text-gray-800">${strategy.total_spend.toLocaleString()}</p>
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <p className="text-xs text-gray-500 mb-1">Avg. Earn Rate</p>
-                        <p className="text-xl font-bold text-gray-800">{strategy.earn_rate}x points</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {cards.length > 0 && (
-              <div className="bg-white rounded-2xl shadow-xl p-8">
-                <h3 className="text-2xl font-bold text-gray-800 mb-6">Recommended Credit Cards</h3>
-                
-                <div className="space-y-4">
-                  {cards.slice(0, 5).map((card, idx) => (
-                    <div key={idx} className="border border-gray-200 rounded-lg p-5 hover:shadow-lg transition-all hover:border-indigo-200">
-                      <div className="flex justify-between items-start flex-wrap gap-4">
-                        <div className="flex-1 min-w-[250px]">
-                          <h4 className="font-semibold text-lg text-gray-800 mb-2">{card.name}</h4>
-                          <p className="text-gray-600 text-sm mb-3">{card.earn_rate}</p>
-                          <div className="flex gap-4 text-sm flex-wrap">
-                            <span className="text-green-600 font-medium">
-                              ✨ Bonus: {card.welcome_bonus.toLocaleString()} pts
-                            </span>
-                            <span className="text-gray-500">
-                              💳 Fee: ${card.annual_fee}/year
-                            </span>
-                            <span className="text-indigo-600 font-medium">
-                              🎯 {card.program}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+              {/* Travel Class */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Travel Class</label>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { value: 'economy', label: 'Economy' },
+                    { value: 'premium_economy', label: 'Premium Economy' },
+                    { value: 'business', label: 'Business' },
+                    { value: 'first', label: 'First' }
+                  ].map(cls => (
+                    <button
+                      key={cls.value}
+                      type="button"
+                      onClick={() => setTravelClass(cls.value)}
+                      className={`px-4 py-3 rounded-lg font-medium transition-all ${
+                        travelClass === cls.value
+                          ? 'bg-indigo-600 text-white shadow-lg'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {cls.label}
+                    </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-indigo-600 text-white py-4 rounded-lg font-semibold hover:bg-indigo-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Calculating...' : 'Calculate Points Required'}
+              </button>
+            </form>
+
+            {/* Results */}
+            {tripResult && (
+              <div className="mt-8 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-6 border-2 border-indigo-200">
+                <h3 className="text-2xl font-bold text-gray-900 mb-4">Points Required</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-700">Route:</span>
+                    <span className="font-semibold text-gray-900">{tripResult.route}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-700">Travel Class:</span>
+                    <span className="font-semibold text-gray-900 capitalize">{tripResult.travel_class.replace('_', ' ')}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-700">Passengers:</span>
+                    <span className="font-semibold text-gray-900">{adults + children}</span>
+                  </div>
+                  
+                  <div className="border-t-2 border-indigo-200 pt-3 mt-3">
+                    <div className="bg-white rounded-lg p-4 mb-3">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-gray-700 font-semibold">One-Way Trip:</span>
+                        <span className="font-bold text-2xl text-indigo-600">{tripResult.total_points.toLocaleString()}</span>
+                      </div>
+                      <p className="text-sm text-gray-600">
+                        {tripResult.points_per_person.toLocaleString()} points × {adults + children} passenger{adults + children > 1 ? 's' : ''}
+                      </p>
+                    </div>
+
+                    {isRoundTrip && (
+                      <div className="bg-purple-600 text-white rounded-lg p-4">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="font-semibold">Round-Trip Total:</span>
+                          <span className="font-bold text-3xl">{(tripResult.total_points * 2).toLocaleString()}</span>
+                        </div>
+                        <p className="text-sm opacity-90">
+                          {tripResult.total_points.toLocaleString()} points each way × 2
+                        </p>
+                      </div>
+                    )}
+
+                    {!isRoundTrip && (
+                      <div className="bg-blue-50 rounded-lg p-3 mt-3">
+                        <p className="text-sm text-blue-800">
+                          💡 <strong>Round-trip estimate:</strong> {(tripResult.total_points * 2).toLocaleString()} points 
+                          ({tripResult.total_points.toLocaleString()} × 2)
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
           </div>
-        )}
-
-        <div className="text-center mt-12 pb-8 text-gray-500 text-sm">
-          <p className="text-xs text-gray-400 mt-2">
-            Points Optimizer Canada - v2.0 | Free & Open Source
-          </p>
-        </div>
+        </main>
       </div>
-    </div>
-  );
-};
+    );
+  }
 
-export default PointsOptimizer;
+  // ============================================================================
+  // FLOW 2: POINTS GAP VIEW
+  // ============================================================================
+  
+  if (currentView === 'gap') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-pink-50">
+        {/* Header */}
+        <header className="bg-white shadow-sm border-b border-gray-200">
+          <div className="max-w-7xl mx-auto px-4 py-4">
+            <button
+              onClick={() => navigateTo('home')}
+              className="flex items-center gap-2 text-gray-600 hover:text-purple-600 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5" />
+              <span className="font-medium">Back to Home</span>
+            </button>
+          </div>
+        </header>
+
+        <main className="max-w-6xl mx-auto px-4 py-12">
+          <div className="bg-white rounded-2xl shadow-xl p-8">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="bg-purple-100 w-12 h-12 rounded-xl flex items-center justify-center">
+                <Calculator className="w-6 h-6 text-purple-600" />
+              </div>
+              <div>
+                <h2 className="text-3xl font-bold text-gray-900">Calculate Points Gap</h2>
+                <p className="text-gray-600">Find the perfect strategy to reach your goal</p>
+              </div>
+            </div>
+
+            {/* Disclaimer */}
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-6">
+              <p className="text-sm text-purple-800">
+                <strong>How it works:</strong> Enter the exact points you need, select your credit cards, 
+                and we'll show you personalized spending strategies to bridge the gap.
+              </p>
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-red-800">{error}</div>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={calculateGap} className="space-y-6">
+              {/* Points Input */}
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <TrendingUp className="w-4 h-4 inline mr-1" />
+                    Points Needed
+                  </label>
+                  <input
+                    type="number"
+                    value={pointsNeeded}
+                    onChange={(e) => setPointsNeeded(e.target.value)}
+                    placeholder="e.g., 80000"
+                    min="1"
+                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
+                      formErrors.pointsNeeded ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                  />
+                  {formErrors.pointsNeeded && (
+                    <p className="text-red-500 text-sm mt-1">{formErrors.pointsNeeded}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <TrendingUp className="w-4 h-4 inline mr-1" />
+                    Current Points Balance
+                  </label>
+                  <input
+                    type="number"
+                    value={pointsCurrent}
+                    onChange={(e) => setPointsCurrent(e.target.value)}
+                    placeholder="e.g., 25000"
+                    min="0"
+                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
+                      formErrors.pointsCurrent ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                  />
+                  {formErrors.pointsCurrent && (
+                    <p className="text-red-500 text-sm mt-1">{formErrors.pointsCurrent}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Timeline */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Timeline: {timeline} months
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="24"
+                  value={timeline}
+                  onChange={(e) => setTimeline(parseInt(e.target.value))}
+                  className="w-full h-2 bg-purple-200 rounded-lg appearance-none cursor-pointer"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>1 month</span>
+                  <span>24 months</span>
+                </div>
+              </div>
+
+              {/* Monthly Budget (Optional) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Monthly Budget <span className="text-gray-500 text-xs">(Optional)</span>
+                </label>
+                <input
+                  type="number"
+                  value={monthlyBudget}
+                  onChange={(e) => setMonthlyBudget(e.target.value)}
+                  placeholder="e.g., 4000"
+                  min="0"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+                <p className="text-sm text-gray-500 mt-1">
+                  Set a monthly spending limit to check feasibility
+                </p>
+              </div>
+
+              {/* Card Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  <CreditCard className="w-4 h-4 inline mr-1" />
+                  Select Your Credit Cards
+                </label>
+                {formErrors.selectedCards && (
+                  <p className="text-red-500 text-sm mb-2">{formErrors.selectedCards}</p>
+                )}
+                <div className="grid md:grid-cols-2 gap-3 max-h-96 overflow-y-auto border border-gray-200 rounded-lg p-4">
+                  {cards.map(card => (
+                    <button
+                      key={card.id}
+                      type="button"
+                      onClick={() => toggleCardSelection(card.id)}
+                      className={`p-4 rounded-lg border-2 text-left transition-all ${
+                        selectedCards.includes(card.id)
+                          ? 'border-purple-500 bg-purple-50'
+                          : 'border-gray-200 bg-white hover:border-purple-300'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="font-semibold text-gray-900 text-sm">{card.name}</div>
+                          <div className="text-xs text-gray-600 mt-1">{card.issuer} • {card.program}</div>
+                          <div className="text-xs text-purple-600 mt-1 font-medium">
+                            Welcome: {card.welcome_bonus?.toLocaleString() || 0} pts
+                          </div>
+                        </div>
+                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                          selectedCards.includes(card.id)
+                            ? 'border-purple-500 bg-purple-500'
+                            : 'border-gray-300'
+                        }`}>
+                          {selectedCards.includes(card.id) && (
+                            <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+                            </svg>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-sm text-gray-500 mt-2">
+                  {selectedCards.length} card{selectedCards.length !== 1 ? 's' : ''} selected
+                </p>
+              </div>
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-purple-600 text-white py-4 rounded-lg font-semibold hover:bg-purple-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Calculating...' : 'Calculate Strategy'}
+              </button>
+            </form>
+
+            {/* Results - Show ALL selected cards */}
+            {gapResult && (
+              <div className="mt-8 space-y-6">
+                {/* Summary */}
+                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-6 border-2 border-purple-200">
+                  <h3 className="text-2xl font-bold text-gray-900 mb-4">Your Strategy Summary</h3>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="bg-white rounded-lg p-4">
+                      <div className="text-sm text-gray-600 mb-1">Points Gap</div>
+                      <div className="text-3xl font-bold text-purple-600">{gapResult.points_gap.toLocaleString()}</div>
+                    </div>
+                    <div className="bg-white rounded-lg p-4">
+                      <div className="text-sm text-gray-600 mb-1">Monthly Target</div>
+                      <div className="text-3xl font-bold text-pink-600">{gapResult.monthly_points_target.toLocaleString()}</div>
+                      <div className="text-xs text-gray-500 mt-1">points/month</div>
+                    </div>
+                  </div>
+                  {!gapResult.is_achievable && monthlyBudget && (
+                    <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                      <p className="text-sm text-yellow-800">
+                        ⚠️ The required monthly spending exceeds your budget. Consider extending your timeline or selecting cards with higher earn rates.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Strategies - Show ALL cards */}
+                <div>
+                  <h4 className="text-xl font-bold text-gray-900 mb-4">
+                    Recommended Strategies ({gapResult.strategies.length} card{gapResult.strategies.length !== 1 ? 's' : ''})
+                  </h4>
+                  <div className="space-y-4">
+                    {gapResult.strategies.map((strategy, index) => (
+                      <div key={index} className="bg-white border-2 border-gray-200 rounded-xl p-6 hover:border-purple-300 transition-colors">
+                        <div className="flex items-start justify-between mb-4">
+                          <div>
+                            <h5 className="font-bold text-lg text-gray-900">{strategy.card_name}</h5>
+                            <p className="text-sm text-gray-600">Average earn rate: {strategy.avg_earn_rate}x</p>
+                          </div>
+                          <div className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-sm font-semibold">
+                            #{index + 1}
+                          </div>
+                        </div>
+
+                        <div className="grid md:grid-cols-3 gap-4 mb-4">
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <div className="text-xs text-gray-600 mb-1">Monthly Spend</div>
+                            <div className="text-xl font-bold text-gray-900">${strategy.monthly_spend_needed.toLocaleString()}</div>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <div className="text-xs text-gray-600 mb-1">Total Spend</div>
+                            <div className="text-xl font-bold text-gray-900">${strategy.total_spend_needed.toLocaleString()}</div>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <div className="text-xs text-gray-600 mb-1">Points Earned</div>
+                            <div className="text-xl font-bold text-purple-600">{strategy.total_points_earned.toLocaleString()}</div>
+                          </div>
+                        </div>
+
+                        {/* Category Breakdown */}
+                        {strategy.category_breakdown && strategy.category_breakdown.length > 0 && (
+                          <div>
+                            <div className="text-sm font-semibold text-gray-700 mb-2">Spending Breakdown:</div>
+                            <div className="space-y-2">
+                              {strategy.category_breakdown.map((cat, catIndex) => (
+                                <div key={catIndex} className="flex items-center justify-between text-sm">
+                                  <span className="text-gray-700">{cat.category}</span>
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-purple-600 font-medium">{cat.multiplier}x</span>
+                                    <span className="text-gray-900 font-semibold">${cat.monthly_spend.toLocaleString()}/mo</span>
+                                    <span className="text-gray-500">= {cat.monthly_points.toLocaleString()} pts</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+export default App;
