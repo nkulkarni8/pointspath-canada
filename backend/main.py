@@ -150,7 +150,7 @@ TYPICAL_MONTHLY_SPENDING = {
 # ============================================================================
 
 def calculate_card_strategy(card: CreditCardModel, points_needed: int, months: int, user_monthly_budget: Optional[int] = None):
-    """Calculate optimal spending strategy with smart budget handling - OPTIMIZED VERSION"""
+    """Calculate optimal spending strategy with smart budget handling - Shows ALL best categories"""
     
     card_rates = CARD_EARNING_RATES.get(card.name, {"general": 1.0})
     monthly_points_needed = points_needed / months
@@ -170,7 +170,7 @@ def calculate_card_strategy(card: CreditCardModel, points_needed: int, months: i
             budget_warning = "⚠️ High spending required - verify this fits your budget"
         
         if user_monthly_budget and monthly_spend > user_monthly_budget:
-            budget_warning = "❌ Exceeds your ${:,.0f} monthly budget by ${:,.0f}".format(user_monthly_budget, monthly_spend - user_monthly_budget)
+            budget_warning = "❌ Exceeds your ${:,.0f} monthly budget by ${:,.0f}".format(user_monthly_budget, total_monthly_spend - user_monthly_budget)
         
         return {
             "card_name": card.name,
@@ -189,48 +189,31 @@ def calculate_card_strategy(card: CreditCardModel, points_needed: int, months: i
             "budget_warning": budget_warning
         }
     
-    # Sort categories by earn rate (best first)
-    sorted_categories = sorted(bonus_categories.items(), key=lambda x: x[1], reverse=True)
+    # Find the BEST multiplier
+    best_multiplier = max(bonus_categories.values())
     
-    # SMART STRATEGY: Allocate spending to highest earning categories first
+    # Get ALL categories with the best multiplier
+    best_categories = [cat for cat, mult in bonus_categories.items() if mult == best_multiplier]
+    
+    # Calculate spending split across ALL best categories
+    num_categories = len(best_categories)
+    spend_per_category = (monthly_points_needed / best_multiplier) / num_categories
+    points_per_category = spend_per_category * best_multiplier
+    
     category_breakdown = []
-    remaining_points = monthly_points_needed
     total_monthly_spend = 0
     
-    for category, multiplier in sorted_categories:
-        if remaining_points <= 0:
-            break
-        
-        # Calculate how much to spend in this category to maximize points
-        # Strategy: Use the best categories until points are met
-        spend_in_category = remaining_points / multiplier
-        points_from_category = spend_in_category * multiplier
-        
+    # Add all best categories to breakdown
+    for category in best_categories:
         category_breakdown.append(CategorySpending(
             category=category.replace("_", " ").title(),
-            monthly_spend=int(spend_in_category),
-            multiplier=multiplier,
-            monthly_points=int(points_from_category)
+            monthly_spend=int(spend_per_category),
+            multiplier=best_multiplier,
+            monthly_points=int(points_per_category)
         ))
-        
-        total_monthly_spend += spend_in_category
-        remaining_points -= points_from_category
+        total_monthly_spend += spend_per_category
     
-    # If still short on points (shouldn't happen with above logic, but safety check)
-    if remaining_points > 0:
-        general_rate = card_rates.get("general", 1.0)
-        additional_spend = remaining_points / general_rate
-        
-        category_breakdown.append(CategorySpending(
-            category="General",
-            monthly_spend=int(additional_spend),
-            multiplier=general_rate,
-            monthly_points=int(remaining_points)
-        ))
-        
-        total_monthly_spend += additional_spend
-    
-    avg_rate = monthly_points_needed / total_monthly_spend if total_monthly_spend > 0 else 1.0
+    avg_rate = best_multiplier  # Since we're only using the best categories
     
     # Budget warnings
     budget_warning = None
@@ -253,7 +236,6 @@ def calculate_card_strategy(card: CreditCardModel, points_needed: int, months: i
         "category_breakdown": category_breakdown,
         "budget_warning": budget_warning
     }
-
 # ============================================================================
 # STARTUP EVENT
 # ============================================================================
