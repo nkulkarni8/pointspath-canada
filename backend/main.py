@@ -7,6 +7,8 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import date, datetime
 import uvicorn
+import requests
+import os
 from sqlalchemy.orm import Session
 from config import settings
 
@@ -134,17 +136,6 @@ CARD_EARNING_RATES = {
     "Tangerine Money-Back Credit Card": {"choice_categories": 2.0, "general": 0.5}
 }
 
-TYPICAL_MONTHLY_SPENDING = {
-    "groceries": 800,
-    "dining": 400,
-    "gas": 200,
-    "travel": 150,
-    "entertainment": 150,
-    "transit": 100,
-    "air_canada": 100,
-    "general": 1200
-}
-
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -170,7 +161,7 @@ def calculate_card_strategy(card: CreditCardModel, points_needed: int, months: i
             budget_warning = "⚠️ High spending required - verify this fits your budget"
         
         if user_monthly_budget and monthly_spend > user_monthly_budget:
-            budget_warning = "❌ Exceeds your ${:,.0f} monthly budget by ${:,.0f}".format(user_monthly_budget, total_monthly_spend - user_monthly_budget)
+            budget_warning = "❌ Exceeds your ${:,.0f} monthly budget by ${:,.0f}".format(user_monthly_budget, monthly_spend - user_monthly_budget)
         
         return {
             "card_name": card.name,
@@ -213,7 +204,7 @@ def calculate_card_strategy(card: CreditCardModel, points_needed: int, months: i
         ))
         total_monthly_spend += spend_per_category
     
-    avg_rate = best_multiplier  # Since we're only using the best categories
+    avg_rate = best_multiplier
     
     # Budget warnings
     budget_warning = None
@@ -236,6 +227,7 @@ def calculate_card_strategy(card: CreditCardModel, points_needed: int, months: i
         "category_breakdown": category_breakdown,
         "budget_warning": budget_warning
     }
+
 # ============================================================================
 # STARTUP EVENT
 # ============================================================================
@@ -255,8 +247,52 @@ async def root():
         "message": "PointsPath Canada API",
         "version": "2.0.0",
         "flows": ["trip-planning", "points-gap-calculator"],
-        "endpoints": ["/calculate-points", "/calculate-gap", "/cards", "/strategies", "/routes"]
+        "endpoints": ["/calculate-points", "/calculate-gap", "/cards", "/strategies", "/routes", "/subscribe-email", "/health"]
     }
+
+@app.post("/subscribe-email")
+async def subscribe_email(email: str):
+    """Proxy endpoint for Beehiiv email signup to avoid CORS issues"""
+    try:
+        beehiiv_api_key = os.getenv("BEEHIIV_API_KEY")
+        beehiiv_pub_id = os.getenv("BEEHIIV_PUB_ID")
+        
+        print(f"📧 Email signup attempt: {email}")
+        
+        if not beehiiv_api_key or not beehiiv_pub_id:
+            print("⚠️ Beehiiv credentials not configured")
+            # For testing: return success even without credentials
+            return {"success": True, "message": "Subscribed successfully (test mode)"}
+        
+        response = requests.post(
+            f"https://api.beehiiv.com/v2/publications/{beehiiv_pub_id}/subscriptions",
+            headers={
+                "Authorization": f"Bearer {beehiiv_api_key}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "email": email,
+                "reactivate_existing": False,
+                "send_welcome_email": True,
+                "utm_source": "pointspath_canada",
+                "utm_medium": "website"
+            },
+            timeout=10
+        )
+        
+        if response.status_code in [200, 201]:
+            print(f"✅ Email signup successful: {email}")
+            return {"success": True, "message": "Subscribed successfully"}
+        else:
+            print(f"❌ Beehiiv API error: {response.status_code} - {response.text}")
+            raise HTTPException(status_code=response.status_code, detail=f"Beehiiv error: {response.text}")
+            
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Request error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Network error: {str(e)}")
+    except Exception as e:
+        print(f"❌ Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/calculate-points", response_model=PointsCalculation)
 async def calculate_points(trip: TripRequest, db: Session = Depends(get_db)):
