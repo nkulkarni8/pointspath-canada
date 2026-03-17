@@ -1,54 +1,23 @@
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
 
 class Settings:
-    """Application settings loaded from environment variables"""
-    
-    # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./points_optimizer.db")
-    
-    # Fix for both old and new postgres URLs
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./pointspath.db")
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    
-    # Psycopg3 compatibility
     if "postgresql://" in DATABASE_URL and "sslmode" not in DATABASE_URL:
         DATABASE_URL += "?sslmode=require" if "?" not in DATABASE_URL else "&sslmode=require"
-    
-    # Environment
+
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
-    
-    # CORS
-    ALLOWED_ORIGINS: list = os.getenv(
-        "ALLOWED_ORIGINS", 
-        "http://localhost:5173,http://localhost:5174"
-    ).split(",")
-    
-    # API Configuration
-    API_TITLE: str = "PointsPath Canada API"
-    API_VERSION: str = "1.0.0"
-    API_DESCRIPTION: str = """
-    API for optimizing Canadian credit card points for travel.
-    
-    ## Features
-    * Calculate points needed for specific routes
-    * Generate earning strategies
-    * Calculate points gaps with personalized plans
-    * Search and filter credit cards
-    
-    ## About
-    PointsPath Canada helps Canadians maximize their credit card points
-    to achieve their travel goals through smart optimization and planning.
-    """
+    ALLOWED_ORIGINS: list = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174").split(",")
 
-# Create settings instance
+    API_TITLE: str = "PointsPath API"
+    API_VERSION: str = "3.0.0"
+    API_DESCRIPTION: str = "Travel rewards optimizer for Canada, USA & India"
+
+    BEEHIIV_API_KEY: str = os.getenv("BEEHIIV_API_KEY", "")
+    BEEHIIV_PUB_ID: str  = os.getenv("BEEHIIV_PUB_ID", "")
+
 settings = Settings()
-
-# Debug print (only in development)
-if settings.ENVIRONMENT == "development":
-    print(f"📊 Environment: {settings.ENVIRONMENT}")
-    print(f"🗄️  Database: {settings.DATABASE_URL[:50]}...")
-    print(f"🌐 CORS Origins: {settings.ALLOWED_ORIGINS}")
