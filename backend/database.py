@@ -791,6 +791,135 @@ def _seed_routes(db):
     print(f"✅ Added {count} routes (CA: {ca}, US: {us}, IN: {ind})")
 
 
+
+def _seed_hk(db):
+    """Seed Hong Kong cards and routes"""
+    from models import CreditCard, Route
+
+    HK_CARDS = [
+        ("HSBC Premier Mastercard HK",          "HSBC",                  "HSBC Rewards",       "4x dining & travel | 3x shopping | 1x general",         1800, 20000),
+        ("Citi Prestige HK",                    "Citibank HK",           "Citi ThankYou",      "4x travel, dining & hotels | 3x entertainment | 1x general", 3600, 40000),
+        ("Standard Chartered Visa Infinite HK", "Standard Chartered HK", "360 Rewards",        "5x travel & dining | 2x shopping | 1.5x general",        2400, 30000),
+        ("American Express Platinum HK",        "American Express HK",   "Membership Rewards", "5x travel & dining | 2x shopping | 1x general",          4800, 50000),
+        ("Hang Seng Visa Signature",             "Hang Seng Bank",        "Hang Seng Rewards",  "5x dining & shopping | 2x travel | 1x general",             0, 15000),
+        ("Bank of China Visa Infinite HK",      "Bank of China HK",      "BOC Rewards",        "4x travel & dining | 2x shopping | 1.5x general",        1800, 25000),
+        ("DBS Black World Mastercard HK",       "DBS Hong Kong",         "DBS Points",         "5x dining | 4x travel | 3x shopping | 1.5x general",     2400, 30000),
+        ("OCBC Titanium Rewards HK",             "OCBC HK",               "OCBC Rewards",       "4x shopping | 2x dining & travel | 1x general",          1200, 12000),
+        ("Mox Credit Card",                     "Mox Bank",              "Mox Rewards",        "2% cashback on all spending (no annual fee)",                0,  2000),
+        ("ZA Card HK",                          "ZA Bank",               "ZA Rewards",         "3x dining | 2x shopping | 1.5x general",                    0,  1500),
+        ("HSBC Red Credit Card HK",             "HSBC HK",               "HSBC Rewards",       "5x online & dining | 3x shopping | 0.5x general",           0, 10000),
+        ("Citi Cash Back HK",                   "Citibank HK",           "Cash Back",          "5% dining | 3% grocery & fuel | 0.5x general",              0,  5000),
+    ]
+    for d in HK_CARDS:
+        db.add(CreditCard(name=d[0], issuer=d[1], program=d[2], earn_rate=d[3],
+                          annual_fee=d[4], welcome_bonus=d[5], country="HK", is_active=True))
+    db.commit()
+    print(f"✅ Added {len(HK_CARDS)} HK cards")
+
+    HK_ROUTES = [
+        ("Hong Kong", "Macau",          60,   "domestic",      3000,  6000,  10000, None,   "Asia Miles", "HK"),
+        ("Hong Kong", "Shenzhen",       40,   "domestic",      3000,  6000,  10000, None,   "Asia Miles", "HK"),
+        ("Hong Kong", "Guangzhou",      140,  "domestic",      4000,  8000,  12000, None,   "Asia Miles", "HK"),
+        ("Hong Kong", "Beijing",        1970, "regional",      15000, 30000, 50000, 80000,  "Asia Miles", "HK"),
+        ("Beijing",   "Hong Kong",      1970, "regional",      15000, 30000, 50000, 80000,  "Asia Miles", "HK"),
+        ("Hong Kong", "Shanghai",       1200, "regional",      12000, 25000, 40000, 65000,  "Asia Miles", "HK"),
+        ("Shanghai",  "Hong Kong",      1200, "regional",      12000, 25000, 40000, 65000,  "Asia Miles", "HK"),
+        ("Hong Kong", "Chengdu",        1600, "regional",      14000, 28000, 45000, 72000,  "Asia Miles", "HK"),
+        ("Chengdu",   "Hong Kong",      1600, "regional",      14000, 28000, 45000, 72000,  "Asia Miles", "HK"),
+        ("Hong Kong", "Chongqing",      1600, "regional",      14000, 28000, 45000, 72000,  "Asia Miles", "HK"),
+        ("Chongqing", "Hong Kong",      1600, "regional",      14000, 28000, 45000, 72000,  "Asia Miles", "HK"),
+        ("Hong Kong", "Xiamen",         700,  "regional",      10000, 20000, 32000, 52000,  "Asia Miles", "HK"),
+        ("Xiamen",    "Hong Kong",      700,  "regional",      10000, 20000, 32000, 52000,  "Asia Miles", "HK"),
+        ("Hong Kong", "Hangzhou",       1250, "regional",      12000, 25000, 40000, 65000,  "Asia Miles", "HK"),
+        ("Hangzhou",  "Hong Kong",      1250, "regional",      12000, 25000, 40000, 65000,  "Asia Miles", "HK"),
+        ("Hong Kong", "Bangkok",        1700, "international", 18000, 35000, 55000, 90000,  "Asia Miles", "HK"),
+        ("Bangkok",   "Hong Kong",      1700, "international", 18000, 35000, 55000, 90000,  "Asia Miles", "HK"),
+        ("Hong Kong", "Singapore",      2570, "international", 20000, 40000, 60000, 100000, "Asia Miles", "HK"),
+        ("Singapore", "Hong Kong",      2570, "international", 20000, 40000, 60000, 100000, "Asia Miles", "HK"),
+        ("Hong Kong", "Kuala Lumpur",   2400, "international", 20000, 38000, 58000, 95000,  "Asia Miles", "HK"),
+        ("Kuala Lumpur","Hong Kong",    2400, "international", 20000, 38000, 58000, 95000,  "Asia Miles", "HK"),
+        ("Hong Kong", "Manila",         1100, "international", 14000, 28000, 45000, 72000,  "Asia Miles", "HK"),
+        ("Manila",    "Hong Kong",      1100, "international", 14000, 28000, 45000, 72000,  "Asia Miles", "HK"),
+        ("Hong Kong", "Ho Chi Minh",    1700, "international", 16000, 32000, 50000, 82000,  "Asia Miles", "HK"),
+        ("Ho Chi Minh","Hong Kong",     1700, "international", 16000, 32000, 50000, 82000,  "Asia Miles", "HK"),
+        ("Hong Kong", "Hanoi",          1800, "international", 16000, 32000, 50000, 82000,  "Asia Miles", "HK"),
+        ("Hanoi",     "Hong Kong",      1800, "international", 16000, 32000, 50000, 82000,  "Asia Miles", "HK"),
+        ("Hong Kong", "Jakarta",        3200, "international", 22000, 42000, 65000, 105000, "Asia Miles", "HK"),
+        ("Jakarta",   "Hong Kong",      3200, "international", 22000, 42000, 65000, 105000, "Asia Miles", "HK"),
+        ("Hong Kong", "Bali",           3600, "international", 22000, 42000, 65000, 105000, "Asia Miles", "HK"),
+        ("Bali",      "Hong Kong",      3600, "international", 22000, 42000, 65000, 105000, "Asia Miles", "HK"),
+        ("Hong Kong", "Phuket",         2100, "international", 18000, 35000, 55000, 90000,  "Asia Miles", "HK"),
+        ("Phuket",    "Hong Kong",      2100, "international", 18000, 35000, 55000, 90000,  "Asia Miles", "HK"),
+        ("Hong Kong", "Tokyo",          2900, "international", 25000, 45000, 70000, 115000, "Asia Miles", "HK"),
+        ("Tokyo",     "Hong Kong",      2900, "international", 25000, 45000, 70000, 115000, "Asia Miles", "HK"),
+        ("Hong Kong", "Osaka",          2600, "international", 22000, 42000, 65000, 105000, "Asia Miles", "HK"),
+        ("Osaka",     "Hong Kong",      2600, "international", 22000, 42000, 65000, 105000, "Asia Miles", "HK"),
+        ("Hong Kong", "Seoul",          2100, "international", 20000, 40000, 60000, 100000, "Asia Miles", "HK"),
+        ("Seoul",     "Hong Kong",      2100, "international", 20000, 40000, 60000, 100000, "Asia Miles", "HK"),
+        ("Hong Kong", "Taipei",         820,  "international", 14000, 28000, 45000, 72000,  "Asia Miles", "HK"),
+        ("Taipei",    "Hong Kong",      820,  "international", 14000, 28000, 45000, 72000,  "Asia Miles", "HK"),
+        ("Hong Kong", "Mumbai",         4310, "international", 30000, 55000, 85000, 140000, "Asia Miles", "HK"),
+        ("Mumbai",    "Hong Kong",      4310, "international", 30000, 55000, 85000, 140000, "Asia Miles", "HK"),
+        ("Hong Kong", "Delhi",          3760, "international", 28000, 52000, 80000, 130000, "Asia Miles", "HK"),
+        ("Delhi",     "Hong Kong",      3760, "international", 28000, 52000, 80000, 130000, "Asia Miles", "HK"),
+        ("Hong Kong", "Bengaluru",      4200, "international", 30000, 55000, 85000, 140000, "Asia Miles", "HK"),
+        ("Bengaluru", "Hong Kong",      4200, "international", 30000, 55000, 85000, 140000, "Asia Miles", "HK"),
+        ("Hong Kong", "Colombo",        3800, "international", 28000, 52000, 80000, 130000, "Asia Miles", "HK"),
+        ("Colombo",   "Hong Kong",      3800, "international", 28000, 52000, 80000, 130000, "Asia Miles", "HK"),
+        ("Hong Kong", "Dubai",          6350, "international", 40000, 70000, 105000,170000, "Asia Miles", "HK"),
+        ("Dubai",     "Hong Kong",      6350, "international", 40000, 70000, 105000,170000, "Asia Miles", "HK"),
+        ("Hong Kong", "Doha",           6500, "international", 40000, 70000, 105000,170000, "Asia Miles", "HK"),
+        ("Doha",      "Hong Kong",      6500, "international", 40000, 70000, 105000,170000, "Asia Miles", "HK"),
+        ("Hong Kong", "Abu Dhabi",      6350, "international", 40000, 70000, 105000,170000, "Asia Miles", "HK"),
+        ("Abu Dhabi", "Hong Kong",      6350, "international", 40000, 70000, 105000,170000, "Asia Miles", "HK"),
+        ("Hong Kong", "London",         9640, "international", 60000, 95000, 140000,230000, "Asia Miles", "HK"),
+        ("London",    "Hong Kong",      9640, "international", 60000, 95000, 140000,230000, "Asia Miles", "HK"),
+        ("Hong Kong", "Paris",          9440, "international", 60000, 95000, 140000,230000, "Asia Miles", "HK"),
+        ("Paris",     "Hong Kong",      9440, "international", 60000, 95000, 140000,230000, "Asia Miles", "HK"),
+        ("Hong Kong", "Frankfurt",      9200, "international", 58000, 92000, 138000,225000, "Asia Miles", "HK"),
+        ("Frankfurt", "Hong Kong",      9200, "international", 58000, 92000, 138000,225000, "Asia Miles", "HK"),
+        ("Hong Kong", "Amsterdam",      9350, "international", 58000, 92000, 138000,225000, "Asia Miles", "HK"),
+        ("Amsterdam", "Hong Kong",      9350, "international", 58000, 92000, 138000,225000, "Asia Miles", "HK"),
+        ("Hong Kong", "Zurich",         9700, "international", 60000, 95000, 140000,230000, "Asia Miles", "HK"),
+        ("Zurich",    "Hong Kong",      9700, "international", 60000, 95000, 140000,230000, "Asia Miles", "HK"),
+        ("Hong Kong", "Rome",           9600, "international", 60000, 95000, 140000,230000, "Asia Miles", "HK"),
+        ("Rome",      "Hong Kong",      9600, "international", 60000, 95000, 140000,230000, "Asia Miles", "HK"),
+        ("Hong Kong", "Madrid",        10200, "international", 62000, 98000, 145000,240000, "Asia Miles", "HK"),
+        ("Madrid",    "Hong Kong",     10200, "international", 62000, 98000, 145000,240000, "Asia Miles", "HK"),
+        ("Hong Kong", "New York",      12970, "international", 80000,125000, 170000,280000, "Asia Miles", "HK"),
+        ("New York",  "Hong Kong",     12970, "international", 80000,125000, 170000,280000, "Asia Miles", "HK"),
+        ("Hong Kong", "Los Angeles",   11640, "international", 75000,120000, 160000,265000, "Asia Miles", "HK"),
+        ("Los Angeles","Hong Kong",    11640, "international", 75000,120000, 160000,265000, "Asia Miles", "HK"),
+        ("Hong Kong", "San Francisco", 11100, "international", 75000,120000, 160000,265000, "Asia Miles", "HK"),
+        ("San Francisco","Hong Kong",  11100, "international", 75000,120000, 160000,265000, "Asia Miles", "HK"),
+        ("Hong Kong", "Vancouver",     10080, "international", 70000,110000, 145000,240000, "Asia Miles", "HK"),
+        ("Vancouver", "Hong Kong",     10080, "international", 70000,110000, 145000,240000, "Asia Miles", "HK"),
+        ("Hong Kong", "Toronto",       12550, "international", 80000,125000, 170000,280000, "Asia Miles", "HK"),
+        ("Toronto",   "Hong Kong",     12550, "international", 80000,125000, 170000,280000, "Asia Miles", "HK"),
+        ("Hong Kong", "Chicago",       12200, "international", 78000,122000, 165000,272000, "Asia Miles", "HK"),
+        ("Chicago",   "Hong Kong",     12200, "international", 78000,122000, 165000,272000, "Asia Miles", "HK"),
+        ("Hong Kong", "Sydney",         7390, "international", 50000, 85000, 125000,205000, "Asia Miles", "HK"),
+        ("Sydney",    "Hong Kong",      7390, "international", 50000, 85000, 125000,205000, "Asia Miles", "HK"),
+        ("Hong Kong", "Melbourne",      7950, "international", 52000, 88000, 130000,212000, "Asia Miles", "HK"),
+        ("Melbourne", "Hong Kong",      7950, "international", 52000, 88000, 130000,212000, "Asia Miles", "HK"),
+        ("Hong Kong", "Auckland",       9500, "international", 60000, 95000, 140000,230000, "Asia Miles", "HK"),
+        ("Auckland",  "Hong Kong",      9500, "international", 60000, 95000, 140000,230000, "Asia Miles", "HK"),
+        ("Hong Kong", "Johannesburg",  11800, "international", 75000,120000, 160000,265000, "Asia Miles", "HK"),
+        ("Johannesburg","Hong Kong",   11800, "international", 75000,120000, 160000,265000, "Asia Miles", "HK"),
+        ("Hong Kong", "Nairobi",        8200, "international", 52000, 88000, 130000,212000, "Asia Miles", "HK"),
+        ("Nairobi",   "Hong Kong",      8200, "international", 52000, 88000, 130000,212000, "Asia Miles", "HK"),
+        ("Hong Kong", "Stockholm",      8900, "international", 55000, 90000, 135000,220000, "Asia Miles", "HK"),
+        ("Stockholm", "Hong Kong",      8900, "international", 55000, 90000, 135000,220000, "Asia Miles", "HK"),
+    ]
+    for r in HK_ROUTES:
+        db.add(Route(from_city=r[0], to_city=r[1], distance_km=r[2], route_type=r[3],
+                     economy_points=r[4], premium_economy_points=r[5], business_points=r[6],
+                     first_points=r[7], program=r[8], country=r[9]))
+    db.commit()
+    print(f"✅ Added {len(HK_ROUTES)} HK routes")
+
+
+
 if __name__ == "__main__":
     init_db()
     seed_database()
