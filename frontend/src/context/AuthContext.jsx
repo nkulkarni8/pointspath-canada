@@ -21,23 +21,30 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
-  auth: {
-    // Disable auto-redirect so magic links never interfere with OTP flow
-    detectSessionInUrl: true,
-    persistSession: true,
-    autoRefreshToken: true,
-  }
-});
+// Guard: if env vars are missing (local dev without .env), use a no-op client
+// so the app renders normally — auth features will be disabled until .env is set
+const SUPABASE_READY = !!(SUPABASE_URL && SUPABASE_ANON);
+
+export const supabase = SUPABASE_READY
+  ? createClient(SUPABASE_URL, SUPABASE_ANON, {
+      auth: {
+        detectSessionInUrl: true,
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+    })
+  : null;
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user,    setUser]    = useState(null);
   const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(SUPABASE_READY); // false immediately if no client
 
   useEffect(() => {
+    if (!supabase) { setLoading(false); return; }
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
@@ -53,37 +60,24 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  /**
-   * Sends a 6-digit OTP code to the user's email.
-   * Works for both new users (first signup) and returning users.
-   */
   const sendOTP = async (email) => {
+    if (!supabase) throw new Error("Auth not configured — add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env");
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: {
-        shouldCreateUser: true,
-        // Do NOT pass emailRedirectTo — that triggers magic link behaviour
-      },
+      options: { shouldCreateUser: true },
     });
     if (error) throw error;
   };
 
-  /**
-   * Verifies the 6-digit code the user received by email.
-   * type: "email" is required for OTP (not "magiclink")
-   */
   const verifyOTP = async (email, token) => {
-    const { data, error } = await supabase.auth.verifyOtp({
-      email,
-      token,
-      type: "email",
-    });
+    if (!supabase) throw new Error("Auth not configured");
+    const { data, error } = await supabase.auth.verifyOtp({ email, token, type: "email" });
     if (error) throw error;
     return data;
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    if (supabase) await supabase.auth.signOut();
   };
 
   return (

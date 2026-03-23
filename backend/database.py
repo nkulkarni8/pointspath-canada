@@ -30,11 +30,14 @@ def seed_database():
     db = SessionLocal()
     try:
         if db.query(CreditCard).count() > 0:
-            print("ℹ️  DB already seeded")
+            print("ℹ️  DB already seeded — running incremental route patch...")
+            _patch_missing_routes(db)
             return
         print("🌱 Seeding database...")
         _seed_cards(db)
         _seed_routes(db)
+        _seed_hk(db)
+        _seed_extra_routes(db)
         print("🎉 Seeding complete!")
     except Exception as e:
         print(f"❌ Seed error: {e}")
@@ -42,6 +45,114 @@ def seed_database():
         db.rollback()
     finally:
         db.close()
+
+
+def _patch_missing_routes(db):
+    """Add any routes missing from the DB without requiring a full reseed.
+    Safe to call repeatedly — skips routes that already exist."""
+    from models import Route
+    from sqlalchemy import text as _text
+
+    PATCH = [
+        # CA → India extras
+        ("Toronto",    "Bengaluru",   13300, "international", 80000, 130000, 170000, 300000, "Aeroplan", "CA"),
+        ("Bengaluru",  "Toronto",     13300, "international", 80000, 130000, 170000, 300000, "Aeroplan", "CA"),
+        ("Toronto",    "Chennai",     13700, "international", 80000, 130000, 170000, 300000, "Aeroplan", "CA"),
+        ("Chennai",    "Toronto",     13700, "international", 80000, 130000, 170000, 300000, "Aeroplan", "CA"),
+        ("Toronto",    "Hyderabad",   13500, "international", 80000, 130000, 170000, 300000, "Aeroplan", "CA"),
+        ("Hyderabad",  "Toronto",     13500, "international", 80000, 130000, 170000, 300000, "Aeroplan", "CA"),
+        ("Vancouver",  "Mumbai",      12100, "international", 75000, 120000, 160000, 280000, "Aeroplan", "CA"),
+        ("Mumbai",     "Vancouver",   12100, "international", 75000, 120000, 160000, 280000, "Aeroplan", "CA"),
+        ("Vancouver",  "Bengaluru",   12500, "international", 75000, 120000, 160000, 280000, "Aeroplan", "CA"),
+        ("Bengaluru",  "Vancouver",   12500, "international", 75000, 120000, 160000, 280000, "Aeroplan", "CA"),
+        ("Montreal",   "Mumbai",      11800, "international", 75000, 120000, 160000, 280000, "Aeroplan", "CA"),
+        ("Mumbai",     "Montreal",    11800, "international", 75000, 120000, 160000, 280000, "Aeroplan", "CA"),
+        ("Montreal",   "Delhi",       11000, "international", 70000, 115000, 155000, 270000, "Aeroplan", "CA"),
+        ("Delhi",      "Montreal",    11000, "international", 70000, 115000, 155000, 270000, "Aeroplan", "CA"),
+        # US → India extras
+        ("San Francisco","Mumbai",    14250, "international", 45000,  70000, 105000, None, "MileagePlus", "US"),
+        ("Mumbai",    "San Francisco",14250, "international", 45000,  70000, 105000, None, "MileagePlus", "US"),
+        ("San Francisco","Delhi",     12100, "international", 45000,  70000, 105000, None, "MileagePlus", "US"),
+        ("Delhi",     "San Francisco",12100, "international", 45000,  70000, 105000, None, "MileagePlus", "US"),
+        ("San Francisco","Bengaluru", 13700, "international", 45000,  70000, 105000, None, "MileagePlus", "US"),
+        ("Bengaluru", "San Francisco",13700, "international", 45000,  70000, 105000, None, "MileagePlus", "US"),
+        ("Chicago",    "Mumbai",      12900, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("Mumbai",     "Chicago",     12900, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("Chicago",    "Bengaluru",   13700, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("Bengaluru",  "Chicago",     13700, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("New York",   "Bengaluru",   13700, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("Bengaluru",  "New York",    13700, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("New York",   "Chennai",     13900, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("Chennai",    "New York",    13900, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("New York",   "Hyderabad",   13500, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("Hyderabad",  "New York",    13500, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("Los Angeles","Bengaluru",   14800, "international", 50000,  75000, 110000, None, "MileagePlus", "US"),
+        ("Bengaluru",  "Los Angeles", 14800, "international", 50000,  75000, 110000, None, "MileagePlus", "US"),
+        ("Los Angeles","Chennai",     15000, "international", 50000,  75000, 110000, None, "MileagePlus", "US"),
+        ("Chennai",    "Los Angeles", 15000, "international", 50000,  75000, 110000, None, "MileagePlus", "US"),
+        ("Los Angeles","Hyderabad",   14600, "international", 50000,  75000, 110000, None, "MileagePlus", "US"),
+        ("Hyderabad",  "Los Angeles", 14600, "international", 50000,  75000, 110000, None, "MileagePlus", "US"),
+        # HK → India
+        ("Hong Kong",  "Mumbai",       4400, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Mumbai",     "Hong Kong",    4400, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Hong Kong",  "Delhi",        4600, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Delhi",      "Hong Kong",    4600, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Hong Kong",  "Bengaluru",    4700, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Bengaluru",  "Hong Kong",    4700, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Hong Kong",  "Chennai",      4800, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Chennai",    "Hong Kong",    4800, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Hong Kong",  "Hyderabad",    4500, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Hyderabad",  "Hong Kong",    4500, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Hong Kong",  "Kolkata",      2900, "international", 18000,  38000,  58000, 100000, "Asia Miles", "HK"),
+        ("Kolkata",    "Hong Kong",    2900, "international", 18000,  38000,  58000, 100000, "Asia Miles", "HK"),
+        # IN → global extras
+        ("Mumbai",     "Hong Kong",    4400, "international", 25000,  52000,  75000, None, "Air India One", "IN"),
+        ("Hong Kong",  "Mumbai",       4400, "international", 25000,  52000,  75000, None, "Air India One", "IN"),
+        ("Delhi",      "Hong Kong",    4600, "international", 25000,  52000,  75000, None, "Air India One", "IN"),
+        ("Hong Kong",  "Delhi",        4600, "international", 25000,  52000,  75000, None, "Air India One", "IN"),
+        ("Mumbai",     "London",       7200, "international", 35000,  65000,  90000, None, "Air India One", "IN"),
+        ("London",     "Mumbai",       7200, "international", 35000,  65000,  90000, None, "Air India One", "IN"),
+        ("Delhi",      "London",       6700, "international", 30000,  60000,  85000, None, "Air India One", "IN"),
+        ("London",     "Delhi",        6700, "international", 30000,  60000,  85000, None, "Air India One", "IN"),
+        ("Mumbai",     "Paris",        7200, "international", 35000,  65000,  90000, None, "Air India One", "IN"),
+        ("Paris",      "Mumbai",       7200, "international", 35000,  65000,  90000, None, "Air India One", "IN"),
+        ("Delhi",      "Paris",        6800, "international", 32000,  62000,  88000, None, "Air India One", "IN"),
+        ("Paris",      "Delhi",        6800, "international", 32000,  62000,  88000, None, "Air India One", "IN"),
+        ("Mumbai",     "Singapore",    4150, "international", 18000,  40000,  60000, None, "Air India One", "IN"),
+        ("Singapore",  "Mumbai",       4150, "international", 18000,  40000,  60000, None, "Air India One", "IN"),
+        ("Delhi",      "Singapore",    4430, "international", 18000,  40000,  60000, None, "Air India One", "IN"),
+        ("Singapore",  "Delhi",        4430, "international", 18000,  40000,  60000, None, "Air India One", "IN"),
+        ("Mumbai",     "Bangkok",      3000, "international", 15000,  32000,  48000, None, "Air India One", "IN"),
+        ("Bangkok",    "Mumbai",       3000, "international", 15000,  32000,  48000, None, "Air India One", "IN"),
+        ("Delhi",      "Bangkok",      2500, "international", 12000,  28000,  42000, None, "Air India One", "IN"),
+        ("Bangkok",    "Delhi",        2500, "international", 12000,  28000,  42000, None, "Air India One", "IN"),
+        ("Mumbai",     "Tokyo",        6740, "international", 32000,  62000,  88000, None, "Air India One", "IN"),
+        ("Tokyo",      "Mumbai",       6740, "international", 32000,  62000,  88000, None, "Air India One", "IN"),
+        ("Bengaluru",  "Singapore",    3700, "international", 15000,  32000,  48000, None, "Air India One", "IN"),
+        ("Singapore",  "Bengaluru",    3700, "international", 15000,  32000,  48000, None, "Air India One", "IN"),
+        ("Bengaluru",  "London",       8600, "international", 35000,  65000,  90000, None, "Air India One", "IN"),
+        ("London",     "Bengaluru",    8600, "international", 35000,  65000,  90000, None, "Air India One", "IN"),
+        ("Chennai",    "Singapore",    3300, "international", 14000,  30000,  45000, None, "Air India One", "IN"),
+        ("Singapore",  "Chennai",      3300, "international", 14000,  30000,  45000, None, "Air India One", "IN"),
+    ]
+
+    added = 0
+    for r in PATCH:
+        exists = db.execute(
+            _text("SELECT 1 FROM routes WHERE from_city=:f AND to_city=:t AND country=:c LIMIT 1"),
+            {"f": r[0], "t": r[1], "c": r[9]}
+        ).fetchone()
+        if not exists:
+            db.add(Route(
+                from_city=r[0], to_city=r[1], distance_km=r[2], route_type=r[3],
+                economy_points=r[4], premium_economy_points=r[5],
+                business_points=r[6], first_points=r[7],
+                program=r[8], country=r[9]
+            ))
+            added += 1
+    if added > 0:
+        db.commit()
+        print(f"✅ Patched {added} missing routes")
 
 # ── CARDS ──────────────────────────────────────────────────────────────────────
 
@@ -918,6 +1029,236 @@ def _seed_hk(db):
     db.commit()
     print(f"✅ Added {len(HK_ROUTES)} HK routes")
 
+
+
+def _seed_extra_routes(db):
+    """Additional routes covering gaps: IN→US/CA/AU, HK→SE Asia, CA/US extra cities."""
+    from models import Route
+
+    EXTRA = [
+        # ── India → North America ───────────────────────────────────────────────
+        ("Mumbai",    "New York",     12550, "international",  70000, 115000, 150000, None, "Air India One", "IN"),
+        ("New York",  "Mumbai",       12550, "international",  70000, 115000, 150000, None, "Air India One", "IN"),
+        ("Delhi",     "New York",     11760, "international",  70000, 115000, 150000, None, "Air India One", "IN"),
+        ("New York",  "Delhi",        11760, "international",  70000, 115000, 150000, None, "Air India One", "IN"),
+        ("Mumbai",    "Los Angeles",  14130, "international",  80000, 130000, 170000, None, "Air India One", "IN"),
+        ("Los Angeles","Mumbai",      14130, "international",  80000, 130000, 170000, None, "Air India One", "IN"),
+        ("Delhi",     "Los Angeles",  12600, "international",  75000, 120000, 160000, None, "Air India One", "IN"),
+        ("Los Angeles","Delhi",       12600, "international",  75000, 120000, 160000, None, "Air India One", "IN"),
+        ("Delhi",     "Chicago",      12400, "international",  75000, 120000, 160000, None, "Air India One", "IN"),
+        ("Chicago",   "Delhi",        12400, "international",  75000, 120000, 160000, None, "Air India One", "IN"),
+        ("Mumbai",    "Toronto",      13100, "international",  75000, 120000, 160000, None, "Air India One", "IN"),
+        ("Toronto",   "Mumbai",       13100, "international",  75000, 120000, 160000, None, "Air India One", "IN"),
+        ("Delhi",     "Toronto",      11700, "international",  70000, 115000, 150000, None, "Air India One", "IN"),
+        ("Toronto",   "Delhi",        11700, "international",  70000, 115000, 150000, None, "Air India One", "IN"),
+        ("Delhi",     "Vancouver",    11600, "international",  70000, 115000, 150000, None, "Air India One", "IN"),
+        ("Vancouver", "Delhi",        11600, "international",  70000, 115000, 150000, None, "Air India One", "IN"),
+        # ── India → Australia ───────────────────────────────────────────────────
+        ("Mumbai",    "Sydney",        9700, "international",  55000,  95000, 130000, None, "Air India One", "IN"),
+        ("Sydney",    "Mumbai",        9700, "international",  55000,  95000, 130000, None, "Air India One", "IN"),
+        ("Delhi",     "Sydney",       10200, "international",  60000, 100000, 140000, None, "Air India One", "IN"),
+        ("Sydney",    "Delhi",        10200, "international",  60000, 100000, 140000, None, "Air India One", "IN"),
+        ("Mumbai",    "Melbourne",    10250, "international",  60000, 100000, 140000, None, "Air India One", "IN"),
+        ("Melbourne", "Mumbai",       10250, "international",  60000, 100000, 140000, None, "Air India One", "IN"),
+        # ── India → Middle East (extra cities) ─────────────────────────────────
+        ("Delhi",     "Abu Dhabi",     2520, "international",  12000,  28000,  40000, None, "Air India One", "IN"),
+        ("Abu Dhabi", "Delhi",         2520, "international",  12000,  28000,  40000, None, "Air India One", "IN"),
+        ("Mumbai",    "Abu Dhabi",     1850, "international",  12000,  28000,  40000, None, "Air India One", "IN"),
+        ("Abu Dhabi", "Mumbai",        1850, "international",  12000,  28000,  40000, None, "Air India One", "IN"),
+        ("Delhi",     "Doha",          3800, "international",  15000,  32000,  48000, None, "Air India One", "IN"),
+        ("Doha",      "Delhi",         3800, "international",  15000,  32000,  48000, None, "Air India One", "IN"),
+        ("Mumbai",    "Doha",          2100, "international",  15000,  32000,  48000, None, "Air India One", "IN"),
+        ("Doha",      "Mumbai",        2100, "international",  15000,  32000,  48000, None, "Air India One", "IN"),
+        ("Mumbai",    "Riyadh",        2840, "international",  15000,  32000,  48000, None, "Air India One", "IN"),
+        ("Riyadh",    "Mumbai",        2840, "international",  15000,  32000,  48000, None, "Air India One", "IN"),
+        # ── India → Southeast Asia (more cities) ───────────────────────────────
+        ("Delhi",     "Bali",          5200, "international",  22000,  48000,  70000, None, "Air India One", "IN"),
+        ("Bali",      "Delhi",         5200, "international",  22000,  48000,  70000, None, "Air India One", "IN"),
+        ("Mumbai",    "Bali",          5100, "international",  22000,  48000,  70000, None, "Air India One", "IN"),
+        ("Bali",      "Mumbai",        5100, "international",  22000,  48000,  70000, None, "Air India One", "IN"),
+        ("Delhi",     "Jakarta",       5700, "international",  25000,  50000,  75000, None, "Air India One", "IN"),
+        ("Jakarta",   "Delhi",         5700, "international",  25000,  50000,  75000, None, "Air India One", "IN"),
+        ("Delhi",     "Manila",        4800, "international",  22000,  45000,  68000, None, "Air India One", "IN"),
+        ("Manila",    "Delhi",         4800, "international",  22000,  45000,  68000, None, "Air India One", "IN"),
+        ("Delhi",     "Ho Chi Minh",   3700, "international",  20000,  42000,  62000, None, "Air India One", "IN"),
+        ("Ho Chi Minh","Delhi",        3700, "international",  20000,  42000,  62000, None, "Air India One", "IN"),
+        # ── HK → Southeast Asia (extra) ─────────────────────────────────────────
+        ("Hong Kong", "Bali",          3700, "international",  22000,  45000,  65000, 110000, "Asia Miles", "HK"),
+        ("Bali",      "Hong Kong",     3700, "international",  22000,  45000,  65000, 110000, "Asia Miles", "HK"),
+        ("Hong Kong", "Jakarta",       3255, "international",  20000,  42000,  62000, 105000, "Asia Miles", "HK"),
+        ("Jakarta",   "Hong Kong",     3255, "international",  20000,  42000,  62000, 105000, "Asia Miles", "HK"),
+        ("Hong Kong", "Manila",        1130, "international",  10000,  25000,  40000,  75000, "Asia Miles", "HK"),
+        ("Manila",    "Hong Kong",     1130, "international",  10000,  25000,  40000,  75000, "Asia Miles", "HK"),
+        ("Hong Kong", "Ho Chi Minh",   1700, "international",  12000,  28000,  45000,  80000, "Asia Miles", "HK"),
+        ("Ho Chi Minh","Hong Kong",    1700, "international",  12000,  28000,  45000,  80000, "Asia Miles", "HK"),
+        ("Hong Kong", "Hanoi",         1760, "international",  12000,  28000,  45000,  80000, "Asia Miles", "HK"),
+        ("Hanoi",     "Hong Kong",     1760, "international",  12000,  28000,  45000,  80000, "Asia Miles", "HK"),
+        ("Hong Kong", "Kuala Lumpur",  2630, "international",  15000,  32000,  50000,  90000, "Asia Miles", "HK"),
+        ("Kuala Lumpur","Hong Kong",   2630, "international",  15000,  32000,  50000,  90000, "Asia Miles", "HK"),
+        ("Hong Kong", "Doha",          6600, "international",  38000,  65000, 100000, 170000, "Asia Miles", "HK"),
+        ("Doha",      "Hong Kong",     6600, "international",  38000,  65000, 100000, 170000, "Asia Miles", "HK"),
+        # ── CA extra European cities ─────────────────────────────────────────────
+        ("Toronto",   "Barcelona",    6420, "international",  70000, 100000, 140000, 240000, "Aeroplan", "CA"),
+        ("Barcelona", "Toronto",      6420, "international",  70000, 100000, 140000, 240000, "Aeroplan", "CA"),
+        ("Toronto",   "Lisbon",       6300, "international",  70000, 100000, 140000, 240000, "Aeroplan", "CA"),
+        ("Lisbon",    "Toronto",      6300, "international",  70000, 100000, 140000, 240000, "Aeroplan", "CA"),
+        ("Toronto",   "Vienna",       7350, "international",  70000, 100000, 140000, 240000, "Aeroplan", "CA"),
+        ("Vienna",    "Toronto",      7350, "international",  70000, 100000, 140000, 240000, "Aeroplan", "CA"),
+        ("Toronto",   "Istanbul",     9100, "international",  75000, 115000, 155000, 270000, "Aeroplan", "CA"),
+        ("Istanbul",  "Toronto",      9100, "international",  75000, 115000, 155000, 270000, "Aeroplan", "CA"),
+        ("Toronto",   "Athens",       9000, "international",  75000, 115000, 155000, 270000, "Aeroplan", "CA"),
+        ("Athens",    "Toronto",      9000, "international",  75000, 115000, 155000, 270000, "Aeroplan", "CA"),
+        ("Vancouver", "Barcelona",    9300, "international",  75000, 115000, 155000, 270000, "Aeroplan", "CA"),
+        ("Barcelona", "Vancouver",    9300, "international",  75000, 115000, 155000, 270000, "Aeroplan", "CA"),
+        ("Montreal",  "Barcelona",    6100, "international",  70000, 100000, 140000, 240000, "Aeroplan", "CA"),
+        ("Barcelona", "Montreal",     6100, "international",  70000, 100000, 140000, 240000, "Aeroplan", "CA"),
+        # ── US extra hub routes ───────────────────────────────────────────────────
+        ("Houston",   "London",       7800, "international",  30000,  45000,  57500, None, "MileagePlus", "US"),
+        ("London",    "Houston",      7800, "international",  30000,  45000,  57500, None, "MileagePlus", "US"),
+        ("Houston",   "Paris",        8600, "international",  30000,  45000,  57500, None, "MileagePlus", "US"),
+        ("Paris",     "Houston",      8600, "international",  30000,  45000,  57500, None, "MileagePlus", "US"),
+        ("Houston",   "Tokyo",       12100, "international",  35000,  55000,  80000, None, "MileagePlus", "US"),
+        ("Tokyo",     "Houston",     12100, "international",  35000,  55000,  80000, None, "MileagePlus", "US"),
+        ("Boston",    "London",       5400, "international",  30000,  45000,  57500, None, "MileagePlus", "US"),
+        ("London",    "Boston",       5400, "international",  30000,  45000,  57500, None, "MileagePlus", "US"),
+        ("Boston",    "Paris",        5700, "international",  30000,  45000,  57500, None, "MileagePlus", "US"),
+        ("Paris",     "Boston",       5700, "international",  30000,  45000,  57500, None, "MileagePlus", "US"),
+        ("Atlanta",   "London",       7000, "international",  30000,  45000,  57500, None, "MileagePlus", "US"),
+        ("London",    "Atlanta",      7000, "international",  30000,  45000,  57500, None, "MileagePlus", "US"),
+        ("Atlanta",   "Paris",        7700, "international",  30000,  45000,  57500, None, "MileagePlus", "US"),
+        ("Paris",     "Atlanta",      7700, "international",  30000,  45000,  57500, None, "MileagePlus", "US"),
+        ("Seattle",   "London",       7820, "international",  30000,  45000,  57500, None, "MileagePlus", "US"),
+        ("London",    "Seattle",      7820, "international",  30000,  45000,  57500, None, "MileagePlus", "US"),
+        ("Seattle",   "Tokyo",        7600, "international",  35000,  55000,  80000, None, "MileagePlus", "US"),
+        ("Tokyo",     "Seattle",      7600, "international",  35000,  55000,  80000, None, "MileagePlus", "US"),
+        ("New York",  "Sydney",      16200, "international",  45000,  70000, 110000, None, "MileagePlus", "US"),
+        ("Sydney",    "New York",    16200, "international",  45000,  70000, 110000, None, "MileagePlus", "US"),
+        ("Los Angeles","Sydney",     12070, "international",  40000,  65000, 100000, None, "MileagePlus", "US"),
+        ("Sydney",    "Los Angeles", 12070, "international",  40000,  65000, 100000, None, "MileagePlus", "US"),
+        ("Los Angeles","Auckland",   10510, "international",  40000,  65000, 100000, None, "MileagePlus", "US"),
+        ("Auckland",  "Los Angeles", 10510, "international",  40000,  65000, 100000, None, "MileagePlus", "US"),
+        ("New York",  "Istanbul",     9750, "international",  35000,  55000,  80000, None, "MileagePlus", "US"),
+        ("Istanbul",  "New York",     9750, "international",  35000,  55000,  80000, None, "MileagePlus", "US"),
+        ("New York",  "Mumbai",      12540, "international",  45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("Mumbai",    "New York",    12540, "international",  45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("New York",  "Delhi",       11760, "international",  45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("Delhi",     "New York",    11760, "international",  45000,  70000, 100000, None, "MileagePlus", "US"),
+        # ── US domestic (more cities) ────────────────────────────────────────────
+        ("Houston",   "New York",      2280, "domestic",  12500,  25000,  40000, None, "MileagePlus", "US"),
+        ("New York",  "Houston",       2280, "domestic",  12500,  25000,  40000, None, "MileagePlus", "US"),
+        ("Houston",   "Los Angeles",   2290, "domestic",  12500,  25000,  40000, None, "MileagePlus", "US"),
+        ("Los Angeles","Houston",      2290, "domestic",  12500,  25000,  40000, None, "MileagePlus", "US"),
+        ("Seattle",   "New York",      3860, "domestic",  15000,  30000,  45000, None, "MileagePlus", "US"),
+        ("New York",  "Seattle",       3860, "domestic",  15000,  30000,  45000, None, "MileagePlus", "US"),
+        ("Boston",    "Los Angeles",   4180, "domestic",  15000,  30000,  45000, None, "MileagePlus", "US"),
+        ("Los Angeles","Boston",       4180, "domestic",  15000,  30000,  45000, None, "MileagePlus", "US"),
+        ("Atlanta",   "Los Angeles",   3110, "domestic",  12500,  25000,  40000, None, "MileagePlus", "US"),
+        ("Los Angeles","Atlanta",      3110, "domestic",  12500,  25000,  40000, None, "MileagePlus", "US"),
+        ("Denver",    "New York",      2620, "domestic",  12500,  25000,  40000, None, "MileagePlus", "US"),
+        ("New York",  "Denver",        2620, "domestic",  12500,  25000,  40000, None, "MileagePlus", "US"),
+        ("Denver",    "Los Angeles",   1530, "domestic",  10000,  20000,  32000, None, "MileagePlus", "US"),
+        ("Los Angeles","Denver",       1530, "domestic",  10000,  20000,  32000, None, "MileagePlus", "US"),
+        ("Phoenix",   "New York",      3440, "domestic",  12500,  25000,  40000, None, "MileagePlus", "US"),
+        ("New York",  "Phoenix",       3440, "domestic",  12500,  25000,  40000, None, "MileagePlus", "US"),
+        ("Las Vegas", "New York",      3590, "domestic",  12500,  25000,  40000, None, "MileagePlus", "US"),
+        ("New York",  "Las Vegas",     3590, "domestic",  12500,  25000,  40000, None, "MileagePlus", "US"),
+
+        # ── CA → India (more cities beyond Mumbai/Delhi) ─────────────────────────
+        ("Toronto",   "Bengaluru",   13300, "international", 80000, 130000, 170000, 300000, "Aeroplan", "CA"),
+        ("Bengaluru", "Toronto",     13300, "international", 80000, 130000, 170000, 300000, "Aeroplan", "CA"),
+        ("Toronto",   "Chennai",     13700, "international", 80000, 130000, 170000, 300000, "Aeroplan", "CA"),
+        ("Chennai",   "Toronto",     13700, "international", 80000, 130000, 170000, 300000, "Aeroplan", "CA"),
+        ("Toronto",   "Hyderabad",   13500, "international", 80000, 130000, 170000, 300000, "Aeroplan", "CA"),
+        ("Hyderabad", "Toronto",     13500, "international", 80000, 130000, 170000, 300000, "Aeroplan", "CA"),
+        ("Vancouver", "Mumbai",      12100, "international", 75000, 120000, 160000, 280000, "Aeroplan", "CA"),
+        ("Mumbai",    "Vancouver",   12100, "international", 75000, 120000, 160000, 280000, "Aeroplan", "CA"),
+        ("Vancouver", "Bengaluru",   12500, "international", 75000, 120000, 160000, 280000, "Aeroplan", "CA"),
+        ("Bengaluru", "Vancouver",   12500, "international", 75000, 120000, 160000, 280000, "Aeroplan", "CA"),
+        ("Montreal",  "Mumbai",      11800, "international", 75000, 120000, 160000, 280000, "Aeroplan", "CA"),
+        ("Mumbai",    "Montreal",    11800, "international", 75000, 120000, 160000, 280000, "Aeroplan", "CA"),
+        ("Montreal",  "Delhi",       11000, "international", 70000, 115000, 155000, 270000, "Aeroplan", "CA"),
+        ("Delhi",     "Montreal",    11000, "international", 70000, 115000, 155000, 270000, "Aeroplan", "CA"),
+
+        # ── US → India (more cities) ──────────────────────────────────────────────
+        ("San Francisco","Mumbai",   14250, "international", 45000,  70000, 105000, None, "MileagePlus", "US"),
+        ("Mumbai",    "San Francisco",14250,"international", 45000,  70000, 105000, None, "MileagePlus", "US"),
+        ("San Francisco","Delhi",    12100, "international", 45000,  70000, 105000, None, "MileagePlus", "US"),
+        ("Delhi",     "San Francisco",12100,"international", 45000,  70000, 105000, None, "MileagePlus", "US"),
+        ("San Francisco","Bengaluru",13700, "international", 45000,  70000, 105000, None, "MileagePlus", "US"),
+        ("Bengaluru", "San Francisco",13700,"international", 45000,  70000, 105000, None, "MileagePlus", "US"),
+        ("Chicago",   "Mumbai",      12900, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("Mumbai",    "Chicago",     12900, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("Chicago",   "Bengaluru",   13700, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("Bengaluru", "Chicago",     13700, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("New York",  "Bengaluru",   13700, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("Bengaluru", "New York",    13700, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("New York",  "Chennai",     13900, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("Chennai",   "New York",    13900, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("New York",  "Hyderabad",   13500, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("Hyderabad", "New York",    13500, "international", 45000,  70000, 100000, None, "MileagePlus", "US"),
+        ("Los Angeles","Bengaluru",  14800, "international", 50000,  75000, 110000, None, "MileagePlus", "US"),
+        ("Bengaluru", "Los Angeles", 14800, "international", 50000,  75000, 110000, None, "MileagePlus", "US"),
+        ("Los Angeles","Chennai",    15000, "international", 50000,  75000, 110000, None, "MileagePlus", "US"),
+        ("Chennai",   "Los Angeles", 15000, "international", 50000,  75000, 110000, None, "MileagePlus", "US"),
+        ("Los Angeles","Hyderabad",  14600, "international", 50000,  75000, 110000, None, "MileagePlus", "US"),
+        ("Hyderabad", "Los Angeles", 14600, "international", 50000,  75000, 110000, None, "MileagePlus", "US"),
+
+        # ── HK → India ───────────────────────────────────────────────────────────
+        ("Hong Kong", "Mumbai",       4400, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Mumbai",    "Hong Kong",    4400, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Hong Kong", "Delhi",        4600, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Delhi",     "Hong Kong",    4600, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Hong Kong", "Bengaluru",    4700, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Bengaluru", "Hong Kong",    4700, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Hong Kong", "Chennai",      4800, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Chennai",   "Hong Kong",    4800, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Hong Kong", "Hyderabad",    4500, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Hyderabad", "Hong Kong",    4500, "international", 25000,  52000,  75000, 130000, "Asia Miles", "HK"),
+        ("Hong Kong", "Kolkata",      2900, "international", 18000,  38000,  58000, 100000, "Asia Miles", "HK"),
+        ("Kolkata",   "Hong Kong",    2900, "international", 18000,  38000,  58000, 100000, "Asia Miles", "HK"),
+
+        # ── IN → more global destinations ─────────────────────────────────────────
+        ("Mumbai",    "Hong Kong",    4400, "international", 25000,  52000,  75000, None, "Air India One", "IN"),
+        ("Hong Kong", "Mumbai",       4400, "international", 25000,  52000,  75000, None, "Air India One", "IN"),
+        ("Delhi",     "Hong Kong",    4600, "international", 25000,  52000,  75000, None, "Air India One", "IN"),
+        ("Hong Kong", "Delhi",        4600, "international", 25000,  52000,  75000, None, "Air India One", "IN"),
+        ("Mumbai",    "London",       7200, "international", 35000,  65000,  90000, None, "Air India One", "IN"),
+        ("London",    "Mumbai",       7200, "international", 35000,  65000,  90000, None, "Air India One", "IN"),
+        ("Delhi",     "London",       6700, "international", 30000,  60000,  85000, None, "Air India One", "IN"),
+        ("London",    "Delhi",        6700, "international", 30000,  60000,  85000, None, "Air India One", "IN"),
+        ("Mumbai",    "Paris",        7200, "international", 35000,  65000,  90000, None, "Air India One", "IN"),
+        ("Paris",     "Mumbai",       7200, "international", 35000,  65000,  90000, None, "Air India One", "IN"),
+        ("Delhi",     "Paris",        6800, "international", 32000,  62000,  88000, None, "Air India One", "IN"),
+        ("Paris",     "Delhi",        6800, "international", 32000,  62000,  88000, None, "Air India One", "IN"),
+        ("Mumbai",    "Singapore",    4150, "international", 18000,  40000,  60000, None, "Air India One", "IN"),
+        ("Singapore", "Mumbai",       4150, "international", 18000,  40000,  60000, None, "Air India One", "IN"),
+        ("Delhi",     "Singapore",    4430, "international", 18000,  40000,  60000, None, "Air India One", "IN"),
+        ("Singapore", "Delhi",        4430, "international", 18000,  40000,  60000, None, "Air India One", "IN"),
+        ("Mumbai",    "Bangkok",      3000, "international", 15000,  32000,  48000, None, "Air India One", "IN"),
+        ("Bangkok",   "Mumbai",       3000, "international", 15000,  32000,  48000, None, "Air India One", "IN"),
+        ("Delhi",     "Bangkok",      2500, "international", 12000,  28000,  42000, None, "Air India One", "IN"),
+        ("Bangkok",   "Delhi",        2500, "international", 12000,  28000,  42000, None, "Air India One", "IN"),
+        ("Mumbai",    "Tokyo",        6740, "international", 32000,  62000,  88000, None, "Air India One", "IN"),
+        ("Tokyo",     "Mumbai",       6740, "international", 32000,  62000,  88000, None, "Air India One", "IN"),
+        ("Bengaluru", "Singapore",    3700, "international", 15000,  32000,  48000, None, "Air India One", "IN"),
+        ("Singapore", "Bengaluru",    3700, "international", 15000,  32000,  48000, None, "Air India One", "IN"),
+        ("Bengaluru", "London",       8600, "international", 35000,  65000,  90000, None, "Air India One", "IN"),
+        ("London",    "Bengaluru",    8600, "international", 35000,  65000,  90000, None, "Air India One", "IN"),
+        ("Chennai",   "Singapore",    3300, "international", 14000,  30000,  45000, None, "Air India One", "IN"),
+        ("Singapore", "Chennai",      3300, "international", 14000,  30000,  45000, None, "Air India One", "IN"),
+    ]
+
+    added = 0
+    for r in EXTRA:
+        db.add(Route(
+            from_city=r[0], to_city=r[1], distance_km=r[2], route_type=r[3],
+            economy_points=r[4], premium_economy_points=r[5],
+            business_points=r[6], first_points=r[7],
+            program=r[8], country=r[9]
+        ))
+        added += 1
+    db.commit()
+    print(f"✅ Added {added} extra routes")
 
 
 if __name__ == "__main__":

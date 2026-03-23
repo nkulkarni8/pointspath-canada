@@ -1,0 +1,35 @@
+name: Weekly Award Data Check
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"   # Every Monday 9am UTC
+  workflow_dispatch:        # Also allow manual trigger
+
+jobs:
+  check-award-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Install deps
+        run: pip install sqlalchemy python-dotenv
+      - name: Run award data check (dry run)
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          cd backend
+          python award_data_agent.py --check 2>&1 | tee /tmp/award_check.txt
+          cat /tmp/award_check.txt
+      - name: Upload report as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: award-data-report-${{ github.run_number }}
+          path: /tmp/award_check.txt
+          retention-days: 30
+      # Optional: open a GitHub issue if changes are detected
+      - name: Flag changes if any
+        run: |
+          if grep -q "changes" /tmp/award_check.txt; then
+            echo "::warning::Award data changes detected — review and apply manually with --apply flag"
+          fi

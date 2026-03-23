@@ -8,11 +8,13 @@ from typing import List, Optional
 from datetime import date, datetime
 import uvicorn, requests, os
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from config import settings
 from database import get_db, init_db, seed_database
 from models import CreditCard as CreditCardModel, Route as RouteModel
 
 from contextlib import asynccontextmanager
+import json
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -30,7 +32,7 @@ app.add_middleware(CORSMiddleware, allow_origins=settings.ALLOWED_ORIGINS,
 class TripRequest(BaseModel):
     from_city: str
     to_city: str
-    depart_date: date
+    depart_date: Optional[date] = None
     return_date: Optional[date] = None
     passengers: int = 1
     travel_class: str = "economy"
@@ -239,29 +241,32 @@ async def get_cities(
     db: Session = Depends(get_db)
 ):
     """
-    Returns domestic origin cities and all destination cities for the given country.
-    Frontend uses this to populate the From (domestic only) and To (all) dropdowns.
+    Returns all origin/destination cities and a routes_map for the given country.
+    routes_map: { from_city: [to_city, ...] } — used by frontend to filter
+    To dropdown based on selected From city (prevents 404 on invalid pairs).
     """
     country = country.upper()
 
-    # Domestic origins = cities that appear as from_city in domestic routes
-    domestic_rows = db.query(RouteModel.from_city).filter(
-        RouteModel.country == country,
-        RouteModel.route_type == "domestic"
-    ).distinct().order_by(RouteModel.from_city).all()
+    # Fetch all route pairs for this country
+    pairs = db.execute(
+        text("SELECT from_city, to_city FROM routes WHERE country = :c ORDER BY from_city, to_city"),
+        {"c": country}
+    ).fetchall()
 
-    # All destinations = every to_city for this country
-    all_dest_rows = db.query(RouteModel.to_city).filter(
-        RouteModel.country == country
-    ).distinct().order_by(RouteModel.to_city).all()
+    routes_map: dict = {}
+    for fc, tc in pairs:
+        routes_map.setdefault(fc, [])
+        if tc not in routes_map[fc]:
+            routes_map[fc].append(tc)
 
-    domestic_origins = [r[0] for r in domestic_rows]
-    all_destinations = sorted(set([r[0] for r in all_dest_rows]))
+    from_cities = sorted(routes_map.keys())
+    to_cities   = sorted(set(tc for tcs in routes_map.values() for tc in tcs))
 
     return {
         "country": country,
-        "from_cities": domestic_origins,      # domestic airports only
-        "to_cities": all_destinations,         # domestic + international
+        "from_cities": from_cities,
+        "to_cities": to_cities,
+        "routes_map": routes_map,
     }
 
 @app.post("/subscribe-email")
@@ -393,29 +398,6 @@ async def calculate_points_gap(gap_request: PointsGapRequest, db: Session = Depe
         total_monthly_spend=total_monthly_spend, calculated_budget=calculated_budget, budget_status=budget_status)
 
 
-@app.get("/cities")
-async def get_cities(
-    country: str = Query(..., description="Country code: CA, US, IN, HK"),
-    db: Session = Depends(get_db)
-):
-    """Returns domestic origin cities and all destination cities for dropdowns."""
-    country = country.upper()
-
-    domestic_rows = db.query(RouteModel.from_city).filter(
-        RouteModel.country == country,
-        RouteModel.route_type == "domestic"
-    ).distinct().order_by(RouteModel.from_city).all()
-
-    all_dest_rows = db.query(RouteModel.to_city).filter(
-        RouteModel.country == country
-    ).distinct().order_by(RouteModel.to_city).all()
-
-    return {
-        "country": country,
-        "from_cities": [r[0] for r in domestic_rows],
-        "to_cities":   sorted(set(r[0] for r in all_dest_rows)),
-    }
-
 @app.get("/cards")
 async def get_cards(country: Optional[str] = Query(None), program: Optional[str] = None,
                     db: Session = Depends(get_db)):
@@ -423,10 +405,29 @@ async def get_cards(country: Optional[str] = Query(None), program: Optional[str]
     if country: q = q.filter(CreditCardModel.country == country.upper())
     if program: q = q.filter(CreditCardModel.program.ilike(f"%{program}%"))
     cards = q.all()
-    return {"count": len(cards), "cards": [
-        {"id": c.id, "name": c.name, "issuer": c.issuer, "program": c.program,
-         "earn_rate": c.earn_rate, "annual_fee": c.annual_fee, "welcome_bonus": c.welcome_bonus,
-         "country": c.country, "is_active": c.is_active} for c in cards]}
+
+    def _tier(fee):
+        if fee and fee >= 400: return "premium"
+        if fee and fee >= 100: return "mid"
+        return "entry"
+
+    return [
+        {
+            "id": c.id,
+            "name": c.name,
+            "issuer": c.issuer,
+            "program": c.program,
+            "earn_rate": c.earn_rate,
+            "earn_rates": CARD_EARNING_RATES.get(c.name, {}),
+            "annual_fee": c.annual_fee,
+            "welcome_bonus": c.welcome_bonus,
+            "country": c.country,
+            "is_active": c.is_active,
+            "tier": _tier(c.annual_fee),
+            "last_updated": "March 2026",
+        }
+        for c in cards
+    ]
 
 @app.get("/cards/{card_id}")
 async def get_card(card_id: int, db: Session = Depends(get_db)):
@@ -447,6 +448,371 @@ async def get_routes(country: Optional[str] = Query(None), db: Session = Depends
          "premium_economy": r.premium_economy_points, "business": r.business_points,
          "first": r.first_points, "distance": r.distance_km, "type": r.route_type,
          "program": r.program, "country": r.country} for r in routes]}
+
+# ─── Country config ───────────────────────────────────────────────────────────
+
+COUNTRY_CONFIG = {
+    "CA": {"name": "Canada", "currency": "CAD", "symbol": "C$", "flag": "🇨🇦", "program": "Aeroplan"},
+    "US": {"name": "United States", "currency": "USD", "symbol": "$", "flag": "🇺🇸", "program": "Chase UR / MileagePlus"},
+    "IN": {"name": "India", "currency": "INR", "symbol": "₹", "flag": "🇮🇳", "program": "Air India Flying Returns"},
+    "HK": {"name": "Hong Kong", "currency": "HKD", "symbol": "HK$", "flag": "🇭🇰", "program": "Cathay Asia Miles"},
+}
+
+PEAK_MONTHS = {6, 7, 8, 12}
+SHOULDER_MONTHS = {4, 5}
+
+# ─── /country-config ─────────────────────────────────────────────────────────
+
+@app.get("/country-config")
+def country_config_endpoint(country: str = Query("CA")):
+    """Return display config (currency, flag, program) for a country code."""
+    return COUNTRY_CONFIG.get(country.upper(), COUNTRY_CONFIG["CA"])
+
+
+
+
+# ─── /calculate-points-v2 ────────────────────────────────────────────────────
+
+@app.get("/calculate-points-v2")
+def calculate_points_v2(
+    country: str = Query("CA"),
+    from_city: str = Query(...),
+    to_city: str = Query(...),
+    cabin: str = Query("economy"),   # economy | premium_economy | business | first
+    passengers: int = Query(1, ge=1, le=9),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    db: Session = Depends(get_db),
+):
+    """
+    Award-chart-aware points calculation.
+    Returns base points, median (for AC dynamic routes), seasonal note, and expert tip.
+    """
+    country = country.upper()
+
+    CABIN_COL = {
+        "economy": "economy_points",
+        "premium_economy": "premium_economy_points",
+        "business": "business_points",
+        "first": "first_points",
+    }
+    col = CABIN_COL.get(cabin, "economy_points")
+
+    # Use only columns that exist in the routes table (no from_code, to_code, median_points_business, etc.)
+    BASE_SQL = """
+        SELECT from_city, to_city,
+               economy_points, premium_economy_points, business_points, first_points,
+               program, route_type
+        FROM routes
+        WHERE {where}
+        ORDER BY economy_points
+        LIMIT 1
+    """
+
+    # Try country-filtered lookup first
+    route = db.execute(
+        text(BASE_SQL.format(where="country = :c AND LOWER(from_city) LIKE :fc AND LOWER(to_city) LIKE :tc")),
+        {"c": country, "fc": f"%{from_city.lower()}%", "tc": f"%{to_city.lower()}%"}
+    ).fetchone()
+
+    if not route:
+        # Fallback: try any country (handles cross-country search like CA user picking IN cities)
+        route = db.execute(
+            text(BASE_SQL.format(where="LOWER(from_city) LIKE :fc AND LOWER(to_city) LIKE :tc")),
+            {"fc": f"%{from_city.lower()}%", "tc": f"%{to_city.lower()}%"}
+        ).fetchone()
+
+    if not route:
+        raise HTTPException(status_code=404, detail=f"Route '{from_city}' → '{to_city}' not found")
+
+    # Positional mapping: 0=from_city, 1=to_city, 2=econ, 3=prem_econ, 4=biz, 5=first, 6=program, 7=route_type
+    COL_IDX = {"economy_points": 2, "premium_economy_points": 3, "business_points": 4, "first_points": 5}
+    pts = route[COL_IDX[col]]
+    cabin_used = cabin
+    if not pts:
+        pts = route[2]  # economy fallback
+        cabin_used = "economy"
+    pts = pts or 0
+
+    # Simple seasonal note based on month (no dynamic pricing column needed)
+    seasonal_note = None
+    if month:
+        if month in PEAK_MONTHS:
+            seasonal_note = f"Peak season (Jun–Aug / Dec) — expect higher award availability costs. Book early."
+        elif month in SHOULDER_MONTHS:
+            seasonal_note = f"Shoulder season — slight premium over base rates possible."
+        else:
+            seasonal_note = "Off-peak — best time to book. Lowest award rates typically available."
+
+    return {
+        "found": True,
+        "route": f"{route[0]} → {route[1]}",
+        "program": route[6] or "",
+        "cabin": cabin_used,
+        "base_points": pts * passengers,
+        "base_points_per_person": pts,
+        "median_points": None,
+        "median_points_per_person": None,
+        "seasonal_note": seasonal_note,
+        "route_note": None,
+        "route_type": route[7] or "",
+        "passengers": passengers,
+        "is_dynamic": False,
+        "last_updated": "March 2026",
+    }
+
+
+# ─── /calculate-gap-v2 ───────────────────────────────────────────────────────
+
+@app.get("/calculate-gap-v2")
+def calculate_gap_v2(
+    country: str = Query("CA"),
+    points_needed: int = Query(..., ge=0),
+    points_current: int = Query(..., ge=0),
+    timeline: int = Query(6, ge=1, le=60),
+    card_id: int = Query(...),
+    db: Session = Depends(get_db),
+):
+    """
+    Gap calculation aware of welcome bonuses and earn rates.
+    card_id: the database ID of the credit card.
+    """
+    card = db.execute(
+        text("SELECT * FROM credit_cards WHERE id = :id"),
+        {"id": card_id}
+    ).fetchone()
+
+    if not card:
+        raise HTTPException(status_code=404, detail=f"Card id={card_id} not found")
+
+    card_dict = dict(card._mapping)
+    welcome = card_dict.get("welcome_bonus", 0) or 0
+    gap = max(0, points_needed - points_current)
+    remaining = max(0, gap - welcome)
+
+    # Parse earn rates
+    earn_rates_raw = card_dict.get("earn_rates", "{}")
+    try:
+        earn_map = json.loads(earn_rates_raw) if isinstance(earn_rates_raw, str) else (earn_rates_raw or {})
+    except Exception:
+        earn_map = {}
+
+    if earn_map:
+        rates = sorted(earn_map.values(), reverse=True)
+        # Weighted avg: top rate 40%, 2nd 30%, rest 30%
+        if len(rates) >= 2:
+            avg_rate = rates[0] * 0.4 + rates[1] * 0.3 + sum(rates[2:]) * 0.3 / max(len(rates) - 2, 1)
+        else:
+            avg_rate = rates[0]
+    else:
+        avg_rate = 1.5
+
+    avg_rate = round(avg_rate, 2)
+    monthly_spend = round(remaining / timeline / avg_rate) if remaining > 0 and timeline > 0 and avg_rate > 0 else 0
+
+    return {
+        "card_id": card_id,
+        "card_name": card_dict.get("name", ""),
+        "card_issuer": card_dict.get("issuer", ""),
+        "card_program": card_dict.get("program", ""),
+        "annual_fee": card_dict.get("annual_fee"),
+        "currency": card_dict.get("currency", "CAD"),
+        "points_needed": points_needed,
+        "points_current": points_current,
+        "gap": gap,
+        "welcome_bonus": welcome,
+        "remaining_after_bonus": remaining,
+        "avg_earn_rate": avg_rate,
+        "timeline_months": timeline,
+        "monthly_spend_needed": monthly_spend,
+        "already_has_enough": gap <= 0,
+        "bonus_covers_gap": welcome >= gap,
+        "last_updated": "March 2026",
+    }
+
+
+# ─── /sweet-spots ────────────────────────────────────────────────────────────
+
+@app.get("/sweet-spots")
+def sweet_spots(
+    country: str = Query("CA"),
+    limit: int = Query(8, ge=1, le=20),
+    db: Session = Depends(get_db),
+):
+    """Return top value routes sorted by points-per-km (business class)."""
+    country = country.upper()
+
+    # Use CAST(... AS REAL) which works on both SQLite and PostgreSQL
+    rows = db.execute(
+        text("""
+            SELECT from_city, NULL as from_code, to_city, NULL as to_code,
+                   economy_points, business_points, first_points,
+                   distance_km, route_type, NULL as note, program, NULL as median_points_business
+            FROM routes
+            WHERE country = :c
+              AND business_points IS NOT NULL
+              AND distance_km IS NOT NULL
+            ORDER BY CAST(business_points AS REAL) / CAST(distance_km AS REAL) ASC
+            LIMIT :lim
+        """),
+        {"c": country, "lim": limit}
+    ).fetchall()
+
+    return [
+        {
+            "from_city": r[0], "from_code": r[1],
+            "to_city": r[2], "to_code": r[3],
+            "economy_points": r[4],
+            "business_points": r[5],
+            "first_points": r[6],
+            "distance_km": r[7],
+            "route_type": r[8],
+            "note": r[9],
+            "program": r[10],
+            "median_points_business": r[11],
+            "value_score": round(r[5] / r[7], 2) if r[7] else None,
+        }
+        for r in rows
+    ]
+
+
+# ─── Hotel programs data ──────────────────────────────────────────────────────
+
+HOTEL_PROGRAMS = [
+    {
+        "id": "marriott",
+        "name": "Marriott Bonvoy",
+        "logo": "🏨",
+        "description": "30+ brands: Marriott, Sheraton, Westin, Ritz-Carlton, W Hotels, St. Regis",
+        "categories": [
+            {"tier": "Category 1", "label": "Budget",        "points_per_night": 7500,  "example": "Courtyard, Fairfield"},
+            {"tier": "Category 2", "label": "Standard",      "points_per_night": 12500, "example": "Four Points, Aloft"},
+            {"tier": "Category 3", "label": "Mid-Range",     "points_per_night": 17500, "example": "Sheraton, Le Méridien"},
+            {"tier": "Category 4", "label": "Upper Mid",     "points_per_night": 25000, "example": "Westin, Renaissance"},
+            {"tier": "Category 5", "label": "Upscale",       "points_per_night": 35000, "example": "JW Marriott, Autograph"},
+            {"tier": "Category 6", "label": "Luxury",        "points_per_night": 50000, "example": "W Hotels, EDITION"},
+            {"tier": "Category 7", "label": "Premium",       "points_per_night": 62500, "example": "Ritz-Carlton"},
+            {"tier": "Category 8", "label": "Top Tier",      "points_per_night": 85000, "example": "St. Regis Maldives"},
+        ],
+        "earn_cards": {
+            "CA": ["American Express Cobalt Card", "American Express Platinum Card"],
+            "US": ["Amex Marriott Bonvoy Brilliant", "Chase Sapphire Reserve"],
+            "IN": ["HDFC Infinia", "Amex Platinum India"],
+            "HK": ["American Express Platinum HK", "Citi Prestige HK"],
+        },
+        "transfer_programs": ["Amex Membership Rewards → Marriott (1:1.25)", "Chase UR → Marriott (1:1)"],
+        "sweet_spot": "Category 4-5 properties offer the best points value",
+        "countries": ["CA", "US", "IN", "HK"],
+    },
+    {
+        "id": "hilton",
+        "name": "Hilton Honors",
+        "logo": "🏩",
+        "description": "18+ brands: Hilton, DoubleTree, Conrad, Waldorf Astoria, Curio Collection",
+        "categories": [
+            {"tier": "Tier 1", "label": "Budget",   "points_per_night": 5000,   "example": "Hampton Inn, Tru by Hilton"},
+            {"tier": "Tier 2", "label": "Standard", "points_per_night": 10000,  "example": "DoubleTree, Embassy Suites"},
+            {"tier": "Tier 3", "label": "Upscale",  "points_per_night": 30000,  "example": "Hilton Hotels & Resorts"},
+            {"tier": "Tier 4", "label": "Luxury",   "points_per_night": 60000,  "example": "Conrad Hotels, Canopy"},
+            {"tier": "Tier 5", "label": "Top Tier", "points_per_night": 120000, "example": "Waldorf Astoria"},
+        ],
+        "earn_cards": {
+            "CA": ["American Express Platinum Card", "American Express Gold Rewards"],
+            "US": ["Amex Hilton Honors Aspire", "Capital One Venture X"],
+            "IN": ["Amex Platinum India", "HDFC Infinia"],
+            "HK": ["American Express Platinum HK", "DBS Black World Mastercard HK"],
+        },
+        "transfer_programs": ["Amex Membership Rewards → Hilton (1:2)", "Capital One Miles → Hilton (1:2)"],
+        "sweet_spot": "Tier 2-3 properties offer 0.5–0.7 cents/point value",
+        "countries": ["CA", "US", "IN", "HK"],
+    },
+    {
+        "id": "hyatt",
+        "name": "World of Hyatt",
+        "logo": "⭐",
+        "description": "Hyatt, Grand Hyatt, Park Hyatt, Andaz, Alila, Thompson Hotels",
+        "categories": [
+            {"tier": "Category 1", "label": "Budget",         "points_per_night": 3500,  "example": "Hyatt House, Hyatt Place"},
+            {"tier": "Category 2", "label": "Standard",       "points_per_night": 8000,  "example": "Hyatt Regency Tier 2"},
+            {"tier": "Category 3", "label": "Mid-Range",      "points_per_night": 12000, "example": "Hyatt Centric"},
+            {"tier": "Category 4", "label": "Upper Upscale",  "points_per_night": 18000, "example": "Grand Hyatt"},
+            {"tier": "Category 5", "label": "Luxury",         "points_per_night": 25000, "example": "Park Hyatt"},
+            {"tier": "Category 6", "label": "Prem. Luxury",   "points_per_night": 40000, "example": "Andaz, Alila"},
+            {"tier": "Category 7", "label": "Ultra Premium",  "points_per_night": 55000, "example": "Park Hyatt Maldives"},
+        ],
+        "earn_cards": {
+            "CA": ["Chase Sapphire Reserve"],
+            "US": ["Chase Sapphire Reserve", "Chase Sapphire Preferred"],
+            "IN": ["Axis Magnus", "HDFC Diners Club Black"],
+            "HK": ["Citi Prestige HK", "Standard Chartered Visa Infinite HK"],
+        },
+        "transfer_programs": ["Chase UR → Hyatt (1:1) — best transfer rate", "Capital One Miles → Hyatt (1:1)"],
+        "sweet_spot": "Hyatt has highest points value (~1.7 cents/point). Category 1-4 is exceptional.",
+        "countries": ["CA", "US", "IN", "HK"],
+    },
+    {
+        "id": "ihg",
+        "name": "IHG One Rewards",
+        "logo": "🏰",
+        "description": "InterContinental, Holiday Inn, Crowne Plaza, Regent, Kimpton, Six Senses",
+        "categories": [
+            {"tier": "Tier 1", "label": "Budget",   "points_per_night": 10000,  "example": "Holiday Inn Express"},
+            {"tier": "Tier 2", "label": "Standard", "points_per_night": 25000,  "example": "Holiday Inn, Staybridge"},
+            {"tier": "Tier 3", "label": "Upscale",  "points_per_night": 40000,  "example": "Crowne Plaza"},
+            {"tier": "Tier 4", "label": "Luxury",   "points_per_night": 70000,  "example": "InterContinental, Kimpton"},
+            {"tier": "Tier 5", "label": "Top Tier", "points_per_night": 100000, "example": "Six Senses, Regent"},
+        ],
+        "earn_cards": {
+            "CA": ["RBC Avion Visa Infinite", "American Express Platinum Card"],
+            "US": ["Chase Sapphire Reserve", "Capital One Venture X"],
+            "IN": ["HDFC Diners Club Black", "Axis Magnus"],
+            "HK": ["HSBC Premier Mastercard HK", "Citi Prestige HK"],
+        },
+        "transfer_programs": ["Chase UR → IHG (1:1)", "Amex MR → IHG (1:1)", "Capital One → IHG (1:1)"],
+        "sweet_spot": "4th-night-free benefit on points redemptions is the best deal",
+        "countries": ["CA", "US", "IN", "HK"],
+    },
+]
+
+
+@app.get("/hotels")
+def get_hotels(country: str = Query("CA")):
+    """Return hotel loyalty programs with earn strategies for the given country."""
+    country = country.upper()
+    programs = [p for p in HOTEL_PROGRAMS if country in p.get("countries", [])]
+    # Attach country-specific card recommendations
+    for p in programs:
+        p = dict(p)
+    return programs
+
+
+# ─── Calculate hotel points needed ───────────────────────────────────────────
+
+@app.get("/hotels/calculate")
+def calculate_hotel_points(
+    program: str = Query(..., description="marriott | hilton | hyatt | ihg"),
+    tier: int = Query(..., ge=1, description="Category/tier number (1-based)"),
+    nights: int = Query(1, ge=1, le=30),
+):
+    """Return points needed for a hotel stay."""
+    prog = next((p for p in HOTEL_PROGRAMS if p["id"] == program.lower()), None)
+    if not prog:
+        raise HTTPException(status_code=404, detail=f"Program '{program}' not found")
+    cats = prog["categories"]
+    idx = min(tier - 1, len(cats) - 1)
+    cat = cats[idx]
+    base = cat["points_per_night"]
+    total = base * nights
+    return {
+        "program": prog["name"],
+        "tier": cat["tier"],
+        "tier_label": cat["label"],
+        "example_hotels": cat["example"],
+        "points_per_night": base,
+        "nights": nights,
+        "total_points": total,
+        "sweet_spot": prog["sweet_spot"],
+    }
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))

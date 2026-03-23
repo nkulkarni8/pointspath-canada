@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls c:/Nachiket/v3/pointspath-canada/frontend/.env*)",
+      "Bash(ls c:/Nachiket/v3/pointspath-canada/.env*)",
+      "Bash(./venv/Scripts/pip install:*)",
+      "Bash(./venv/Scripts/pip show:*)",
+      "Bash(DATABASE_URL=\"sqlite:///:memory:\" ENVIRONMENT=development ALLOWED_ORIGINS=\"*\" ./venv/Scripts/python -m pytest tests/test_api.py -v --tb=short)",
+      "Bash(DATABASE_URL=\"sqlite:///:memory:\" ENVIRONMENT=development ALLOWED_ORIGINS=\"*\" BEEHIIV_API_KEY=\"\" BEEHIIV_PUB_ID=\"\" ./venv/Scripts/python -m pytest tests/test_api.py -v --tb=short)",
+      "Bash(DATABASE_URL=\"sqlite:///pointspath.db\" ENVIRONMENT=development ALLOWED_ORIGINS=\"*\" BEEHIIV_API_KEY=\"\" BEEHIIV_PUB_ID=\"\" ./venv/Scripts/python -c \":*)",
+      "Bash(npm run:*)",
+      "Bash(\"./venv/Scripts/python.exe\" -c \":*)",
+      "Bash(\"./venv/Scripts/python.exe\" -m pytest tests/test_api.py::TestCities -v)",
+      "Bash(\"./venv/Scripts/python.exe\" -m pytest tests/ -v)",
+      "Bash(venv/Scripts/python -m py_compile main.py)",
+      "Bash(venv/Scripts/python -m py_compile database.py)"
+    ]
+  }
+}
