@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "./context/AuthContext";
 import LoginModal from "./components/auth/LoginModal";
+import ProtectedRoute from "./components/auth/ProtectedRoute";
 
 const API = import.meta.env.VITE_API_URL || "https://pointspath-canada-api.onrender.com";
 
@@ -399,23 +400,42 @@ export default function App() {
             <div style={{ color: t.muted, textAlign: "center", padding: 60 }}>Loading {cc?.name} data…</div>
           ) : (
             <>
-              {tab === "calculator" && !journey?.setup && (
-                <JourneySetup data={data} setJourney={setJourney} t={t} inp={inp} cc={cc} />
-              )}
-              {tab === "calculator" && (
-                <Calculator data={data} country={country} cc={cc} t={t} inp={inp}
-                  journey={journey} setTripResult={setTripResult} setTab={setTab} />
-              )}
+              {/* About is public — no login needed */}
+              {tab === "about" && <About t={t} cc={cc} setTab={setTab} setJourney={setJourney} />}
+
+              {/* Hotels requires sign-in */}
               {tab === "hotels" && (
-                <Hotels data={data} country={country} cc={cc} t={t} inp={inp} setTab={setTab} />
+                <ProtectedRoute country={country} accentColor={t.accent}>
+                  <Hotels data={data} country={country} cc={cc} t={t} inp={inp} setTab={setTab} />
+                </ProtectedRoute>
+              )}
+
+              {/* Calculator, Gap, Cards, Spots require sign-in */}
+              {tab === "calculator" && (
+                <ProtectedRoute country={country} accentColor={t.accent}>
+                  {!journey?.setup && (
+                    <JourneySetup data={data} setJourney={setJourney} t={t} inp={inp} cc={cc} />
+                  )}
+                  <Calculator data={data} country={country} cc={cc} t={t} inp={inp}
+                    journey={journey} setTripResult={setTripResult} setTab={setTab} />
+                </ProtectedRoute>
               )}
               {tab === "gap" && (
-                <Gap data={data} country={country} cc={cc} t={t} inp={inp}
-                  journey={journey} tripResult={tripResult} />
+                <ProtectedRoute country={country} accentColor={t.accent}>
+                  <Gap data={data} country={country} cc={cc} t={t} inp={inp}
+                    journey={journey} tripResult={tripResult} />
+                </ProtectedRoute>
               )}
-              {tab === "cards" && <Cards data={data} country={country} cc={cc} t={t} inp={inp} />}
-              {tab === "spots" && <Spots data={data} country={country} cc={cc} t={t} />}
-              {tab === "about" && <About t={t} cc={cc} setTab={setTab} setJourney={setJourney} />}
+              {tab === "cards" && (
+                <ProtectedRoute country={country} accentColor={t.accent}>
+                  <Cards data={data} country={country} cc={cc} t={t} inp={inp} />
+                </ProtectedRoute>
+              )}
+              {tab === "spots" && (
+                <ProtectedRoute country={country} accentColor={t.accent}>
+                  <Spots data={data} country={country} cc={cc} t={t} />
+                </ProtectedRoute>
+              )}
             </>
           )}
         </div>
