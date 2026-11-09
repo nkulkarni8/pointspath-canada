@@ -20,4 +20,8 @@ class Settings:
     BEEHIIV_API_KEY: str = os.getenv("BEEHIIV_API_KEY", "")
     BEEHIIV_PUB_ID: str  = os.getenv("BEEHIIV_PUB_ID", "")
 
+    # Supabase project JWT secret — used only to verify the signature on tokens
+    # the frontend already received from Supabase, so /wallet knows who is asking.
+    SUPABASE_JWT_SECRET: str = os.getenv("SUPABASE_JWT_SECRET", "")
+
 settings = Settings()

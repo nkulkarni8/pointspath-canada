@@ -203,55 +203,67 @@ class TestCities:
 # ── Points Calculation ────────────────────────────────────────────────────────
 
 class TestCalculatePoints:
+    """Covers the merged /calculate-points endpoint (former v1 exact/reverse-direction
+    lookup + v2's fuzzy match and seasonal note, now a single endpoint)."""
+
     def test_calculate_economy(self, client):
         r = client.post("/calculate-points", json={
-            "from_city": "Toronto", "to_city": "Vancouver", "depart_date": "2026-08-01",
+            "from_city": "Toronto", "to_city": "Vancouver",
             "travel_class": "economy", "passengers": 1, "country": "CA"
         })
         assert r.status_code == 200
         data = r.json()
-        assert data["total_points"] == 15000
-        assert data["points_per_person"] == 15000
+        assert data["found"] is True
+        assert data["base_points"] == 15000
+        assert data["base_points_per_person"] == 15000
 
     def test_calculate_business(self, client):
         r = client.post("/calculate-points", json={
-            "from_city": "Toronto", "to_city": "Vancouver", "depart_date": "2026-08-01",
+            "from_city": "Toronto", "to_city": "Vancouver",
             "travel_class": "business", "passengers": 1, "country": "CA"
         })
         assert r.status_code == 200
-        assert r.json()["total_points"] == 50000
+        assert r.json()["base_points"] == 50000
 
     def test_calculate_multiple_passengers(self, client):
         r = client.post("/calculate-points", json={
-            "from_city": "Toronto", "to_city": "Vancouver", "depart_date": "2026-08-01",
+            "from_city": "Toronto", "to_city": "Vancouver",
             "travel_class": "economy", "passengers": 2, "country": "CA"
         })
         assert r.status_code == 200
-        assert r.json()["total_points"] == 30000
+        assert r.json()["base_points"] == 30000
 
-    def test_calculate_return_trip(self, client):
+    def test_calculate_reverse_direction_matches(self, client):
+        """Route seeded as Vancouver→Toronto should still resolve when queried the other way."""
         r = client.post("/calculate-points", json={
-            "from_city": "Toronto", "to_city": "Vancouver",
-            "travel_class": "economy", "passengers": 1, "country": "CA",
-            "return_date": "2026-09-01", "depart_date": "2026-08-15"
+            "from_city": "Vancouver", "to_city": "Toronto",
+            "travel_class": "economy", "passengers": 1, "country": "CA"
         })
         assert r.status_code == 200
-        assert r.json()["total_points"] == 30000  # 15000 × 2
+        assert r.json()["base_points"] == 15000
+
+    def test_calculate_seasonal_note(self, client):
+        r = client.post("/calculate-points", json={
+            "from_city": "Toronto", "to_city": "Vancouver",
+            "travel_class": "economy", "passengers": 1, "country": "CA", "month": 7
+        })
+        assert r.status_code == 200
+        assert "Peak" in r.json()["seasonal_note"]
 
     def test_route_not_found(self, client):
         r = client.post("/calculate-points", json={
-            "from_city": "FakeCity", "to_city": "AlsoFake", "depart_date": "2026-08-01",
+            "from_city": "FakeCity", "to_city": "AlsoFake",
             "travel_class": "economy", "passengers": 1, "country": "CA"
         })
         assert r.status_code == 404
 
     def test_hk_route(self, client):
         r = client.post("/calculate-points", json={
-            "from_city": "Hong Kong", "to_city": "Singapore", "depart_date": "2026-08-01",
+            "from_city": "Hong Kong", "to_city": "Singapore",
             "travel_class": "business", "passengers": 1, "country": "HK"
         })
         assert r.status_code == 200
-        assert r.json()["total_points"] == 60000
+        assert r.json()["base_points"] == 60000
 
 
 # ── Points Gap ────────────────────────────────────────────────────────────────
@@ -279,14 +291,30 @@ class TestCalculateGap:
         })
         assert r.status_code == 400
 
-    def test_gap_v2(self, client):
+    def test_gap_wallet_strategy_with_multiple_cards(self, client):
         cards = client.get("/cards?country=CA").json()
-        card_id = cards[0]["id"]
-        r = client.get(f"/calculate-gap-v2?country=CA&points_needed=50000&points_current=5000&timeline=6&card_id={card_id}")
+        card_ids = [c["id"] for c in cards[:2]] if len(cards) >= 2 else [cards[0]["id"]]
+        r = client.post("/calculate-gap", json={
+            "points_needed": 80000, "points_current": 10000,
+            "timeline_months": 6, "card_ids": card_ids, "country": "CA"
+        })
         assert r.status_code == 200
         data = r.json()
-        assert data["gap"] == 45000
-        assert "monthly_spend_needed" in data
+        if len(card_ids) > 1:
+            assert data["wallet_strategy"] is not None
+            assert "monthly_spend_needed" in data["wallet_strategy"]
+        else:
+            assert data["wallet_strategy"] is None
+
+    def test_gap_single_card_has_no_wallet_strategy(self, client):
+        cards = client.get("/cards?country=CA").json()
+        card_id = cards[0]["id"]
+        r = client.post("/calculate-gap", json={
+            "points_needed": 50000, "points_current": 10000,
+            "timeline_months": 6, "card_ids": [card_id], "country": "CA"
+        })
+        assert r.status_code == 200
+        assert r.json()["wallet_strategy"] is None
 
 
 # ── Hotels ────────────────────────────────────────────────────────────────────
@@ -381,3 +409,173 @@ class TestRoutes:
         r = client.get("/routes?country=HK")
         assert r.status_code == 200
         assert r.json()["count"] > 0
+
+
+# ── Trustworthy last_updated ─────────────────────────────────────────────────
+
+class TestLastUpdated:
+    def test_cards_last_updated_is_real_not_hardcoded(self, client):
+        card = client.get("/cards?country=CA").json()[0]
+        assert card["last_updated"] != "March 2026"
+        assert card["last_updated"] is None or isinstance(card["last_updated"], str)
+
+    def test_cards_have_affiliate_url_field(self, client):
+        card = client.get("/cards?country=CA").json()[0]
+        assert "affiliate_url" in card  # present (None until a real partner link is set)
+
+
+# ── Strategies (previously untested) ─────────────────────────────────────────
+
+class TestStrategies:
+    def test_strategies_for_route(self, client):
+        r = client.post("/strategies", json={
+            "from_city": "Toronto", "to_city": "Vancouver",
+            "travel_class": "business", "passengers": 1, "country": "CA"
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert isinstance(data, list)
+        assert len(data) > 0
+        assert "cards" in data[0]
+
+    def test_strategies_route_not_found(self, client):
+        r = client.post("/strategies", json={
+            "from_city": "Nowhere", "to_city": "AlsoNowhere",
+            "travel_class": "economy", "passengers": 1, "country": "CA"
+        })
+        assert r.status_code == 404
+
+
+# ── Subscribe (previously untested) ───────────────────────────────────────────
+
+class TestSubscribe:
+    def test_subscribe_test_mode(self, client):
+        """No Beehiiv keys configured in tests → should succeed in test mode."""
+        r = client.post("/subscribe-email", params={"email": "test@example.com"})
+        assert r.status_code == 200
+        assert r.json()["success"] is True
+
+
+# ── Transfer partners ─────────────────────────────────────────────────────────
+
+class TestTransferPartners:
+    def test_list_all(self, client):
+        r = client.get("/transfer-partners")
+        assert r.status_code == 200
+        assert len(r.json()) > 0
+
+    def test_filter_by_to_program(self, client):
+        r = client.get("/transfer-partners?to_program=Aeroplan")
+        assert r.status_code == 200
+        rows = r.json()
+        assert all(p["to_program"] == "Aeroplan" for p in rows)
+
+    def test_filter_by_country(self, client):
+        r = client.get("/transfer-partners?from_program=Amex Membership Rewards&country=CA")
+        assert r.status_code == 200
+        rows = r.json()
+        assert all(p["country"] == "CA" for p in rows)
+
+
+# ── Wallet (auth-gated) ───────────────────────────────────────────────────────
+
+class TestPointsValuations:
+    def test_known_program(self, client):
+        r = client.get("/points-valuations?program=Aeroplan")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["floor"] <= data["ceiling"]
+
+    def test_unknown_program_returns_none_not_guess(self, client):
+        r = client.get("/points-valuations?program=Not A Real Program")
+        assert r.status_code == 200
+        assert r.json() is None
+
+    def test_full_list(self, client):
+        r = client.get("/points-valuations")
+        assert r.status_code == 200
+        assert len(r.json()) > 0
+
+
+class TestAlliances:
+    def test_aeroplan_is_star_alliance(self, client):
+        r = client.get("/alliances?program=Aeroplan")
+        assert r.status_code == 200
+        assert r.json()["alliance"] == "Star Alliance"
+
+    def test_asia_miles_is_oneworld(self, client):
+        r = client.get("/alliances?program=Asia Miles")
+        assert r.status_code == 200
+        assert r.json()["alliance"] == "oneworld"
+
+    def test_unknown_program(self, client):
+        r = client.get("/alliances?program=Not A Real Program")
+        assert r.status_code == 200
+        assert r.json() is None
+
+
+class TestCuratedSweetSpots:
+    def test_list_all(self, client):
+        r = client.get("/sweet-spots-curated")
+        assert r.status_code == 200
+        assert len(r.json()) > 0
+
+    def test_filter_by_program(self, client):
+        r = client.get("/sweet-spots-curated?program=Aeroplan")
+        assert r.status_code == 200
+        assert all(s["program"] == "Aeroplan" for s in r.json())
+
+    def test_filter_by_kind(self, client):
+        r = client.get("/sweet-spots-curated?kind=hotel")
+        assert r.status_code == 200
+        assert all(s["kind"] == "hotel" for s in r.json())
+
+
+class TestStopovers:
+    def test_aeroplan_allows_stopover(self, client):
+        r = client.get("/stopovers?program=Aeroplan")
+        assert r.status_code == 200
+        assert r.json()["allowed"] is True
+
+    def test_unknown_program_no_fabricated_rule(self, client):
+        r = client.get("/stopovers?program=Not A Real Program")
+        assert r.status_code == 200
+        assert r.json()["allowed"] is None
+
+
+class TestCabinCodes:
+    def test_returns_four_cabins(self, client):
+        r = client.get("/cabin-codes")
+        assert r.status_code == 200
+        codes = {c["code"] for c in r.json()}
+        assert codes == {"F", "J", "W", "Y"}
+
+
+class TestExpandedHotels:
+    def test_new_chains_present(self, client):
+        names = [p["name"] for p in client.get("/hotels?country=US").json()]
+        for expected in ["Accor Live Limitless", "Choice Privileges", "Wyndham Rewards", "Best Western Rewards"]:
+            assert expected in names
+
+    def test_chain_without_chart_rejects_calculate(self, client):
+        r = client.get("/hotels/calculate?program=accor&tier=1&nights=2")
+        assert r.status_code == 400
+
+    def test_wyndham_calculate_works(self, client):
+        r = client.get("/hotels/calculate?program=wyndham&tier=1&nights=2")
+        assert r.status_code == 200
+        assert r.json()["total_points"] == 15000
+
+
+class TestWallet:
+    def test_get_wallet_requires_auth(self, client):
+        r = client.get("/wallet")
+        assert r.status_code == 401
+
+    def test_put_wallet_requires_auth(self, client):
+        r = client.put("/wallet", json={"country": "CA", "data": {}})
+        assert r.status_code == 401
+
+    def test_get_wallet_rejects_bad_token(self, client):
+        r = client.get("/wallet", headers={"Authorization": "Bearer not-a-real-jwt"})
+        assert r.status_code in (401, 503)  # 503 only if SUPABASE_JWT_SECRET unset in this env

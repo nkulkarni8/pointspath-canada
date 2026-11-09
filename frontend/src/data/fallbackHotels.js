@@ -1,0 +1,65 @@
+// Used when the backend /hotels endpoint is unavailable, so the Hotels tab
+// still renders something useful offline or during a cold Render start.
+export const FALLBACK_HOTELS = [
+  {
+    id: "marriott", name: "Marriott Bonvoy", logo: "🏨",
+    description: "30+ brands: Marriott, Sheraton, Westin, Ritz-Carlton, W Hotels, St. Regis",
+    categories: [
+      { tier: "Category 1", label: "Budget",     points_per_night: 7500,  example: "Courtyard, Fairfield" },
+      { tier: "Category 2", label: "Standard",   points_per_night: 12500, example: "Four Points, Aloft" },
+      { tier: "Category 3", label: "Mid-Range",  points_per_night: 17500, example: "Sheraton, Le Méridien" },
+      { tier: "Category 4", label: "Upper Mid",  points_per_night: 25000, example: "Westin, Renaissance" },
+      { tier: "Category 5", label: "Upscale",    points_per_night: 35000, example: "JW Marriott, Autograph" },
+      { tier: "Category 6", label: "Luxury",     points_per_night: 50000, example: "W Hotels, EDITION" },
+      { tier: "Category 7", label: "Premium",    points_per_night: 62500, example: "Ritz-Carlton" },
+      { tier: "Category 8", label: "Top Tier",   points_per_night: 85000, example: "St. Regis Maldives" },
+    ],
+    earn_cards: { CA: ["American Express Cobalt Card","American Express Platinum Card"], US: ["Amex Marriott Bonvoy Brilliant","Chase Sapphire Reserve"], IN: ["HDFC Infinia","Amex Platinum India"], HK: ["American Express Platinum HK","Citi Prestige HK"] },
+    transfer_programs: ["Amex Membership Rewards → Marriott (1:1.25)", "Chase UR → Marriott (1:1)"],
+    sweet_spot: "Category 4-5 properties offer the best points value", countries: ["CA","US","IN","HK"],
+  },
+  {
+    id: "hilton", name: "Hilton Honors", logo: "🏩",
+    description: "18+ brands: Hilton, DoubleTree, Conrad, Waldorf Astoria, Curio Collection",
+    categories: [
+      { tier: "Tier 1", label: "Budget",   points_per_night: 5000,   example: "Hampton Inn, Tru by Hilton" },
+      { tier: "Tier 2", label: "Standard", points_per_night: 10000,  example: "DoubleTree, Embassy Suites" },
+      { tier: "Tier 3", label: "Upscale",  points_per_night: 30000,  example: "Hilton Hotels & Resorts" },
+      { tier: "Tier 4", label: "Luxury",   points_per_night: 60000,  example: "Conrad Hotels, Canopy" },
+      { tier: "Tier 5", label: "Top Tier", points_per_night: 120000, example: "Waldorf Astoria" },
+    ],
+    earn_cards: { CA: ["American Express Platinum Card","American Express Gold Rewards"], US: ["Amex Hilton Honors Aspire","Capital One Venture X"], IN: ["Amex Platinum India","HDFC Infinia"], HK: ["American Express Platinum HK","DBS Black World Mastercard HK"] },
+    transfer_programs: ["Amex Membership Rewards → Hilton (1:2)", "Capital One Miles → Hilton (1:2)"],
+    sweet_spot: "Tier 2-3 properties offer 0.5–0.7 cents/point value", countries: ["CA","US","IN","HK"],
+  },
+  {
+    id: "hyatt", name: "World of Hyatt", logo: "⭐",
+    description: "Hyatt, Grand Hyatt, Park Hyatt, Andaz, Alila, Thompson Hotels",
+    categories: [
+      { tier: "Category 1", label: "Budget",        points_per_night: 3500,  example: "Hyatt House, Hyatt Place" },
+      { tier: "Category 2", label: "Standard",      points_per_night: 8000,  example: "Hyatt Regency Tier 2" },
+      { tier: "Category 3", label: "Mid-Range",     points_per_night: 12000, example: "Hyatt Centric" },
+      { tier: "Category 4", label: "Upper Upscale", points_per_night: 18000, example: "Grand Hyatt" },
+      { tier: "Category 5", label: "Luxury",        points_per_night: 25000, example: "Park Hyatt" },
+      { tier: "Category 6", label: "Prem. Luxury",  points_per_night: 40000, example: "Andaz, Alila" },
+      { tier: "Category 7", label: "Ultra Premium", points_per_night: 55000, example: "Park Hyatt Maldives" },
+    ],
+    earn_cards: { CA: ["Chase Sapphire Reserve"], US: ["Chase Sapphire Reserve","Chase Sapphire Preferred"], IN: ["Axis Magnus","HDFC Diners Club Black"], HK: ["Citi Prestige HK","Standard Chartered Visa Infinite HK"] },
+    transfer_programs: ["Chase UR → Hyatt (1:1) — best transfer rate", "Capital One Miles → Hyatt (1:1)"],
+    sweet_spot: "Hyatt has highest points value (~1.7 cents/point). Category 1-4 is exceptional.", countries: ["CA","US","IN","HK"],
+  },
+  {
+    id: "ihg", name: "IHG One Rewards", logo: "🏰",
+    description: "InterContinental, Holiday Inn, Crowne Plaza, Regent, Kimpton, Six Senses",
+    categories: [
+      { tier: "Tier 1", label: "Budget",   points_per_night: 10000,  example: "Holiday Inn Express" },
+      { tier: "Tier 2", label: "Standard", points_per_night: 25000,  example: "Holiday Inn, Staybridge" },
+      { tier: "Tier 3", label: "Upscale",  points_per_night: 40000,  example: "Crowne Plaza" },
+      { tier: "Tier 4", label: "Luxury",   points_per_night: 70000,  example: "InterContinental, Kimpton" },
+      { tier: "Tier 5", label: "Top Tier", points_per_night: 100000, example: "Six Senses, Regent" },
+    ],
+    earn_cards: { CA: ["RBC Avion Visa Infinite","American Express Platinum Card"], US: ["Chase Sapphire Reserve","Capital One Venture X"], IN: ["HDFC Diners Club Black","Axis Magnus"], HK: ["HSBC Premier Mastercard HK","Citi Prestige HK"] },
+    transfer_programs: ["Chase UR → IHG (1:1)", "Amex MR → IHG (1:1)", "Capital One → IHG (1:1)"],
+    sweet_spot: "4th-night-free benefit on points redemptions is the best deal", countries: ["CA","US","IN","HK"],
+  },
+];
