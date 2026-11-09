@@ -11,7 +11,17 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from config import settings
 from database import get_db, init_db, seed_database
-from models import CreditCard as CreditCardModel, Route as RouteModel
+from models import CreditCard as CreditCardModel, Route as RouteModel, SavedWallet as SavedWalletModel
+from data.countries import COUNTRY_CONFIG, PEAK_MONTHS, SHOULDER_MONTHS
+from data.earning_rates import CARD_EARNING_RATES
+from data.hotels import HOTEL_PROGRAMS
+from data.transfer_partners import TRANSFER_PARTNERS, partners_for_program, partners_from_program
+from data.points_valuations import get_valuation
+from data.alliances import get_alliance
+from data.sweet_spots_curated import curated_sweet_spots
+from data.stopovers import get_stopover_rule
+from data.cabin_codes import CABIN_CODES
+from auth import get_current_user_id
 
 from contextlib import asynccontextmanager
 import json
@@ -37,6 +47,7 @@ class TripRequest(BaseModel):
     passengers: int = 1
     travel_class: str = "economy"
     country: str = "CA"
+    month: Optional[int] = None  # 1-12, optional seasonal hint independent of depart_date
 
 class PointsCalculation(BaseModel):
     total_points: int
@@ -77,99 +88,36 @@ class GapStrategy(BaseModel):
     category_breakdown: List[CategorySpending]
     budget_warning: Optional[str] = None
 
+class WalletCategoryAllocation(CategorySpending):
+    best_card_name: str
+    best_card_id: int
+
+class WalletStrategy(BaseModel):
+    """Combined plan across every held card — each category uses whichever
+    held card earns it the highest multiplier, instead of picking one 'best' card."""
+    card_names: List[str]
+    avg_earn_rate: float
+    monthly_spend_needed: int
+    total_spend_needed: int
+    monthly_points_earned: int
+    total_points_earned: int
+    category_breakdown: List[WalletCategoryAllocation]
+    budget_warning: Optional[str] = None
+
 class PointsGapResponse(BaseModel):
     points_gap: int
     monthly_points_target: int
     timeline_months: int
     strategies: List[GapStrategy]
+    wallet_strategy: Optional[WalletStrategy] = None
     is_achievable: bool
     total_monthly_spend: int
     calculated_budget: Optional[int] = None
     budget_status: Optional[str] = None
 
-# ── Card earning rates ─────────────────────────────────────────────────────────
-CARD_EARNING_RATES = {
-    # CA
-    "American Express Platinum Card":          {"travel":1.25,"dining":1.25,"gas":1.25,"groceries":1.25,"entertainment":1.25,"general":1.25},
-    "TD Aeroplan Visa Infinite":               {"groceries":1.5,"gas":1.5,"air_canada":1.5,"dining":1.0,"travel":1.0,"general":1.0},
-    "CIBC Aeroplan Visa Infinite":             {"groceries":1.5,"gas":1.5,"dining":1.5,"travel":1.0,"general":1.0},
-    "American Express Aeroplan Reserve":       {"dining":3.0,"groceries":2.0,"gas":2.0,"travel":2.0,"entertainment":2.0,"general":2.0},
-    "RBC Avion Visa Infinite":                 {"travel":1.25,"groceries":1.0,"gas":1.0,"dining":1.0,"general":1.0},
-    "Scotiabank Gold American Express":        {"groceries":5.0,"dining":5.0,"entertainment":5.0,"gas":1.0,"travel":1.0,"general":1.0},
-    "BMO Eclipse Visa Infinite":               {"groceries":5.0,"gas":5.0,"transit":5.0,"dining":1.0,"travel":1.0,"general":1.0},
-    "American Express Cobalt Card":            {"groceries":5.0,"dining":5.0,"travel":2.0,"transit":2.0,"gas":1.0,"general":1.0},
-    "RBC Ion+ Visa":                           {"groceries":3.0,"dining":2.0,"transit":2.0,"gas":1.0,"travel":1.0,"general":1.0},
-    "TD First Class Travel Visa Infinite":     {"travel":3.0,"groceries":1.5,"gas":1.5,"dining":1.5,"general":1.0},
-    "CIBC Aventura Visa Infinite":             {"travel":2.0,"dining":2.0,"groceries":1.0,"gas":1.0,"general":1.0},
-    "Scotiabank Passport Visa Infinite":       {"travel":5.0,"dining":5.0,"entertainment":5.0,"groceries":5.0,"gas":1.0,"general":1.0},
-    "TD Aeroplan Visa Infinite Privilege":     {"groceries":2.0,"gas":2.0,"air_canada":2.0,"dining":2.0,"travel":2.0,"general":1.0},
-    "National Bank World Elite Mastercard":    {"groceries":5.0,"gas":5.0,"transit":5.0,"dining":1.0,"travel":1.0,"general":1.0},
-    "Scotiabank Scene+ Visa":                  {"groceries":1.0,"dining":1.0,"gas":1.0,"travel":1.0,"entertainment":1.0,"general":1.0},
-    "RBC Avion Visa Infinite Privilege":       {"travel":1.25,"groceries":1.0,"gas":1.0,"dining":1.0,"general":1.0},
-    "CIBC Aeroplan Visa Infinite Privilege":   {"groceries":1.5,"gas":1.5,"dining":1.5,"travel":1.5,"general":1.0},
-    "American Express Gold Rewards":           {"travel":2.0,"dining":2.0,"gas":2.0,"groceries":2.0,"general":1.0},
-    "BMO Ascend World Elite Mastercard":       {"travel":5.0,"dining":5.0,"entertainment":5.0,"groceries":1.0,"gas":1.0,"general":1.0},
-    "CIBC Dividend Visa Infinite":             {"groceries":4.0,"gas":2.0,"transit":2.0,"dining":1.0,"travel":1.0,"general":1.0},
-    "RBC British Airways Visa Infinite":       {"british_airways":1.5,"travel":1.0,"dining":1.0,"groceries":1.0,"general":1.0},
-    "Tangerine Money-Back Credit Card":        {"choice_categories":2.0,"general":0.5},
-    # US
-    "Chase Sapphire Reserve":                  {"travel":3.0,"dining":3.0,"groceries":1.0,"general":1.0},
-    "Chase Sapphire Preferred":                {"travel":2.0,"dining":3.0,"groceries":3.0,"streaming":3.0,"transit":2.0,"general":1.0},
-    "Amex Platinum":                           {"travel":5.0,"dining":1.0,"groceries":1.0,"general":1.0},
-    "Amex Gold":                               {"dining":4.0,"groceries":4.0,"travel":3.0,"general":1.0},
-    "Capital One Venture X":                   {"travel":10.0,"hotels":5.0,"general":2.0},
-    "Capital One Venture":                     {"travel":5.0,"general":2.0},
-    "Citi Premier":                            {"travel":3.0,"dining":3.0,"groceries":3.0,"gas":3.0,"general":1.0},
-    "Chase Freedom Unlimited":                 {"travel":3.0,"dining":3.0,"drugstore":3.0,"general":1.5},
-    "Amex Blue Cash Preferred":                {"groceries":6.0,"streaming":6.0,"transit":3.0,"gas":3.0,"general":1.0},
-    "Chase United Explorer":                   {"united":2.0,"dining":2.0,"hotel":2.0,"general":1.0},
-    "Delta SkyMiles Gold Amex":                {"delta":2.0,"dining":2.0,"groceries":2.0,"general":1.0},
-    "Amex Hilton Honors Aspire":               {"hilton":14.0,"dining":7.0,"flights":7.0,"general":3.0},
-    "Chase Ink Business Preferred":            {"travel":3.0,"shipping":3.0,"advertising":3.0,"telecom":3.0,"general":1.0},
-    "Bank of America Premium Rewards":         {"travel":2.0,"dining":2.0,"general":1.5},
-    "Wells Fargo Autograph":                   {"travel":3.0,"dining":3.0,"gas":3.0,"transit":3.0,"streaming":3.0,"phone":3.0,"general":1.0},
-    "Bilt Mastercard":                         {"rent":1.0,"travel":2.0,"dining":3.0,"general":1.0},
-    "Discover it Miles":                       {"general":1.5},
-    "Amex EveryDay Preferred":                 {"groceries":4.5,"gas":1.5,"general":1.0},
-    "Chase Freedom Flex":                      {"rotating":5.0,"travel":3.0,"dining":3.0,"drugstore":3.0,"general":1.0},
-    "Citi Double Cash":                        {"general":2.0},
-    "Amex Business Platinum":                  {"travel":5.0,"airlines":1.5,"general":1.0},
-    "Chase Ink Business Cash":                 {"office":5.0,"telecom":5.0,"dining":2.0,"gas":2.0,"general":1.0},
-    "Amex Marriott Bonvoy Brilliant":          {"marriott":6.0,"dining":3.0,"travel":3.0,"general":2.0},
-    "US Bank Altitude Reserve":                {"travel":3.0,"mobile_pay":3.0,"dining":3.0,"general":1.0},
-    # IN
-    "HDFC Infinia":                            {"dining":5.0,"travel":5.0,"groceries":2.0,"gas":2.0,"general":1.5},
-    "Axis Magnus":                             {"travel":12.0,"dining":2.0,"groceries":1.5,"general":1.0},
-    "HDFC Diners Club Black":                  {"dining":5.0,"travel":5.0,"groceries":2.0,"gas":2.0,"general":1.5},
-    "SBI Card PRIME":                          {"dining":5.0,"groceries":5.0,"travel":5.0,"entertainment":5.0,"general":2.0},
-    "ICICI Emeralde":                          {"travel":4.0,"dining":3.0,"groceries":2.0,"gas":2.0,"general":2.0},
-    "Amex Platinum India":                     {"travel":5.0,"dining":5.0,"shopping":2.0,"general":1.0},
-    "HDFC Regalia":                            {"dining":5.0,"travel":5.0,"groceries":2.0,"general":1.5},
-    "Axis Vistara Infinite":                   {"vistara":6.0,"dining":4.0,"travel":3.0,"general":2.0},
-    "ICICI Sapphiro Amex":                     {"shopping":4.0,"dining":3.0,"travel":2.0,"general":2.0},
-    "Citi Prestige India":                     {"travel":4.0,"dining":4.0,"hotel":4.0,"entertainment":3.0,"general":1.0},
-    "Kotak Royale Signature":                  {"dining":4.0,"travel":3.0,"groceries":2.0,"general":1.0},
-    "HDFC Millennia":                          {"online":5.0,"dining":2.5,"groceries":2.5,"general":1.0},
-    "SBI Cashback Card":                       {"online":5.0,"offline":1.0,"general":1.0},
-    "RBL Bank World Safari":                   {"travel":5.0,"dining":3.0,"general":2.0},
-    "Yes First Exclusive":                     {"travel":12.0,"dining":6.0,"groceries":2.0,"general":2.0},
-    "Amex SmartEarn India":                    {"amazon":10.0,"flipkart":10.0,"dining":5.0,"general":1.0},
-    "IndusInd Iconia":                         {"dining":3.0,"entertainment":3.0,"travel":3.0,"general":1.5},
-    "AU Bank Altura Plus":                     {"dining":3.0,"online":3.0,"travel":2.0,"general":1.5},
-    # HK
-    "HSBC Premier Mastercard HK":             {"dining":4.0,"travel":3.0,"shopping":2.0,"general":1.0},
-    "Citi Prestige HK":                        {"travel":4.0,"dining":4.0,"hotel":4.0,"entertainment":3.0,"general":1.0},
-    "Standard Chartered Visa Infinite HK":    {"travel":5.0,"dining":3.0,"shopping":2.0,"general":1.5},
-    "American Express Platinum HK":           {"travel":5.0,"dining":5.0,"shopping":2.0,"general":1.0},
-    "Hang Seng Visa Signature":               {"dining":5.0,"shopping":3.0,"travel":2.0,"general":1.0},
-    "Bank of China Visa Infinite HK":         {"travel":4.0,"dining":3.0,"shopping":2.0,"general":1.5},
-    "DBS Black World Mastercard HK":          {"dining":5.0,"travel":4.0,"shopping":3.0,"general":1.5},
-    "OCBC Titanium Rewards HK":               {"shopping":4.0,"dining":2.0,"travel":2.0,"general":1.0},
-    "Mox Credit Card":                         {"dining":2.0,"shopping":2.0,"travel":1.0,"general":1.0},
-    "ZA Card HK":                              {"dining":3.0,"shopping":2.0,"general":1.5},
-    "HSBC Red Credit Card HK":                {"dining":5.0,"shopping":3.0,"online":5.0,"general":0.5},
-    "Citi Cash Back HK":                       {"dining":5.0,"grocery":3.0,"fuel":3.0,"general":0.5},
-}
+class WalletPayload(BaseModel):
+    country: Optional[str] = None
+    data: dict
 
 # ── Helper ─────────────────────────────────────────────────────────────────────
 
@@ -214,6 +162,56 @@ def calculate_card_strategy(card, points_needed, months, user_monthly_budget=Non
             "monthly_spend_needed": int(total_spend), "total_spend_needed": int(total_spend * months),
             "monthly_points_earned": int(monthly_points_needed), "total_points_earned": int(points_needed),
             "category_breakdown": breakdown, "budget_warning": bw}
+
+
+def calculate_wallet_strategy(cards, points_needed, months, user_monthly_budget=None):
+    """Combine every held card into one plan: for each spend category seen across
+    the whole wallet, route spend to whichever held card earns that category best."""
+    if not cards:
+        return None
+
+    # best multiplier per category across the whole wallet
+    best_per_category = {}  # cat -> (rate, card)
+    for card in cards:
+        rates = CARD_EARNING_RATES.get(card.name, {"general": 1.0})
+        for cat, mult in rates.items():
+            if mult < 1.5 and cat != "general":
+                continue
+            current = best_per_category.get(cat)
+            if not current or mult > current[0]:
+                best_per_category[cat] = (mult, card)
+
+    if not best_per_category:
+        return None
+
+    monthly_points_needed = points_needed / months
+    cats = sorted(best_per_category.items(), key=lambda kv: kv[1][0], reverse=True)
+    best_mult = cats[0][1][0]
+    best_cats = [(cat, rate, card) for cat, (rate, card) in cats if rate == best_mult]
+
+    spend_per = (monthly_points_needed / best_mult) / len(best_cats)
+    breakdown, total_spend, card_names = [], 0, []
+    for cat, rate, card in best_cats:
+        pts_per = spend_per * rate
+        breakdown.append(WalletCategoryAllocation(
+            category=cat.replace("_", " ").title(), monthly_spend=int(spend_per),
+            multiplier=rate, monthly_points=int(pts_per),
+            best_card_name=card.name, best_card_id=card.id))
+        total_spend += spend_per
+        if card.name not in card_names:
+            card_names.append(card.name)
+
+    bw = None
+    if user_monthly_budget and total_spend > user_monthly_budget:
+        bw = "❌ Exceeds your ${:,.0f} budget by ${:,.0f}".format(user_monthly_budget, total_spend - user_monthly_budget)
+    elif total_spend > 10000:
+        bw = "⚠️ Very high spending required — consider extending timeline"
+
+    return WalletStrategy(
+        card_names=card_names, avg_earn_rate=round(best_mult, 2),
+        monthly_spend_needed=int(total_spend), total_spend_needed=int(total_spend * months),
+        monthly_points_earned=int(monthly_points_needed), total_points_earned=int(points_needed),
+        category_breakdown=breakdown, budget_warning=bw)
 
 # ── Startup ────────────────────────────────────────────────────────────────────
 
@@ -289,40 +287,70 @@ async def subscribe_email(email: str):
 
 @app.post("/calculate-points")
 async def calculate_points(trip: TripRequest, db: Session = Depends(get_db)):
-    from_city = trip.from_city.strip().title()
-    to_city   = trip.to_city.strip().title()
+    """
+    Award-chart-aware points calculation (merges the former v1 exact/reverse-direction
+    lookup with v2's fuzzy match and seasonal note — one endpoint, one source of truth).
+    """
+    from_city = trip.from_city.strip()
+    to_city   = trip.to_city.strip()
     country   = trip.country.upper()
+    cabin     = trip.travel_class.lower().replace(" ", "_")
 
-    route = db.query(RouteModel).filter(
-        RouteModel.from_city == from_city,
-        RouteModel.to_city   == to_city,
-        RouteModel.country   == country
-    ).first()
+    CABIN_COL = {"economy": RouteModel.economy_points, "premium_economy": RouteModel.premium_economy_points,
+                 "business": RouteModel.business_points, "first": RouteModel.first_points}
+    if cabin not in CABIN_COL:
+        raise HTTPException(status_code=400, detail=f"Invalid travel class: {trip.travel_class}")
 
-    if not route:
-        # Try reverse direction
-        route = db.query(RouteModel).filter(
-            RouteModel.from_city == to_city,
-            RouteModel.to_city   == from_city,
-            RouteModel.country   == country
-        ).first()
+    def _find(exact: bool):
+        q = db.query(RouteModel).filter(RouteModel.country == country)
+        if exact:
+            q = q.filter(RouteModel.from_city == from_city.title(), RouteModel.to_city == to_city.title())
+        else:
+            q = q.filter(RouteModel.from_city.ilike(f"%{from_city}%"), RouteModel.to_city.ilike(f"%{to_city}%"))
+        route = q.first()
+        if route:
+            return route
+        q = db.query(RouteModel).filter(RouteModel.country == country)
+        if exact:
+            q = q.filter(RouteModel.from_city == to_city.title(), RouteModel.to_city == from_city.title())
+        else:
+            q = q.filter(RouteModel.from_city.ilike(f"%{to_city}%"), RouteModel.to_city.ilike(f"%{from_city}%"))
+        return q.first()
 
+    route = _find(exact=True) or _find(exact=False)
     if not route:
         raise HTTPException(status_code=404,
             detail=f"Route not found: {from_city} → {to_city} ({country}). Please select cities from the dropdown.")
 
-    class_map = {"economy": route.economy_points, "premium_economy": route.premium_economy_points,
-                 "business": route.business_points, "first": route.first_points}
-    pts = class_map.get(trip.travel_class.lower().replace(" ", "_"))
-    if pts is None:
-        raise HTTPException(status_code=400, detail=f"Invalid travel class: {trip.travel_class}")
-
+    pts = getattr(route, CABIN_COL[cabin].key) or route.economy_points or 0
+    cabin_used = cabin if getattr(route, CABIN_COL[cabin].key) else "economy"
     total = pts * trip.passengers
-    if trip.return_date:
-        total *= 2
 
-    return {"total_points": total, "points_per_person": pts,
-            "route": f"{from_city} to {to_city}", "travel_class": trip.travel_class}
+    seasonal_note = None
+    if trip.month:
+        if trip.month in PEAK_MONTHS:
+            seasonal_note = "Peak season (Jun–Aug / Dec) — expect higher award availability costs. Book early."
+        elif trip.month in SHOULDER_MONTHS:
+            seasonal_note = "Shoulder season — slight premium over base rates possible."
+        else:
+            seasonal_note = "Off-peak — best time to book. Lowest award rates typically available."
+
+    return {
+        "found": True,
+        "route": f"{route.from_city} → {route.to_city}",
+        "program": route.program or "",
+        "cabin": cabin_used,
+        "base_points": total,
+        "base_points_per_person": pts,
+        "median_points": None,
+        "median_points_per_person": None,
+        "seasonal_note": seasonal_note,
+        "route_note": None,
+        "route_type": route.route_type or "",
+        "passengers": trip.passengers,
+        "is_dynamic": False,
+        "last_updated": route.updated_at.strftime("%B %Y") if route.updated_at else None,
+    }
 
 @app.post("/strategies")
 async def calculate_strategies(trip: TripRequest, db: Session = Depends(get_db)):
@@ -373,6 +401,9 @@ async def calculate_points_gap(gap_request: PointsGapRequest, db: Session = Depe
         strategies.append(GapStrategy(**s))
     strategies.sort(key=lambda x: x.avg_earn_rate, reverse=True)
 
+    wallet_strategy = (calculate_wallet_strategy(user_cards, points_gap, gap_request.timeline_months,
+                                                  gap_request.monthly_budget) if len(user_cards) > 1 else None)
+
     best = strategies[0] if strategies else None
     is_achievable = True
     total_monthly_spend = best.monthly_spend_needed if best else 0
@@ -394,8 +425,9 @@ async def calculate_points_gap(gap_request: PointsGapRequest, db: Session = Depe
             is_achievable = calculated_budget <= 10000
 
     return PointsGapResponse(points_gap=points_gap, monthly_points_target=int(monthly_pts_target),
-        timeline_months=gap_request.timeline_months, strategies=strategies, is_achievable=is_achievable,
-        total_monthly_spend=total_monthly_spend, calculated_budget=calculated_budget, budget_status=budget_status)
+        timeline_months=gap_request.timeline_months, strategies=strategies, wallet_strategy=wallet_strategy,
+        is_achievable=is_achievable, total_monthly_spend=total_monthly_spend,
+        calculated_budget=calculated_budget, budget_status=budget_status)
 
 
 @app.get("/cards")
@@ -424,7 +456,8 @@ async def get_cards(country: Optional[str] = Query(None), program: Optional[str]
             "country": c.country,
             "is_active": c.is_active,
             "tier": _tier(c.annual_fee),
-            "last_updated": "March 2026",
+            "affiliate_url": c.affiliate_url,
+            "last_updated": c.updated_at.strftime("%B %Y") if c.updated_at else None,
         }
         for c in cards
     ]
@@ -449,18 +482,6 @@ async def get_routes(country: Optional[str] = Query(None), db: Session = Depends
          "first": r.first_points, "distance": r.distance_km, "type": r.route_type,
          "program": r.program, "country": r.country} for r in routes]}
 
-# ─── Country config ───────────────────────────────────────────────────────────
-
-COUNTRY_CONFIG = {
-    "CA": {"name": "Canada", "currency": "CAD", "symbol": "C$", "flag": "🇨🇦", "program": "Aeroplan"},
-    "US": {"name": "United States", "currency": "USD", "symbol": "$", "flag": "🇺🇸", "program": "Chase UR / MileagePlus"},
-    "IN": {"name": "India", "currency": "INR", "symbol": "₹", "flag": "🇮🇳", "program": "Air India Flying Returns"},
-    "HK": {"name": "Hong Kong", "currency": "HKD", "symbol": "HK$", "flag": "🇭🇰", "program": "Cathay Asia Miles"},
-}
-
-PEAK_MONTHS = {6, 7, 8, 12}
-SHOULDER_MONTHS = {4, 5}
-
 # ─── /country-config ─────────────────────────────────────────────────────────
 
 @app.get("/country-config")
@@ -471,163 +492,102 @@ def country_config_endpoint(country: str = Query("CA")):
 
 
 
-# ─── /calculate-points-v2 ────────────────────────────────────────────────────
+# ─── /transfer-partners ──────────────────────────────────────────────────────
 
-@app.get("/calculate-points-v2")
-def calculate_points_v2(
-    country: str = Query("CA"),
-    from_city: str = Query(...),
-    to_city: str = Query(...),
-    cabin: str = Query("economy"),   # economy | premium_economy | business | first
-    passengers: int = Query(1, ge=1, le=9),
-    month: Optional[int] = Query(None, ge=1, le=12),
-    db: Session = Depends(get_db),
+@app.get("/transfer-partners")
+def get_transfer_partners(
+    to_program: Optional[str] = Query(None, description="e.g. 'Aeroplan', 'Marriott Bonvoy'"),
+    from_program: Optional[str] = Query(None, description="e.g. 'Amex Membership Rewards'"),
+    country: Optional[str] = Query(None),
 ):
-    """
-    Award-chart-aware points calculation.
-    Returns base points, median (for AC dynamic routes), seasonal note, and expert tip.
-    """
-    country = country.upper()
-
-    CABIN_COL = {
-        "economy": "economy_points",
-        "premium_economy": "premium_economy_points",
-        "business": "business_points",
-        "first": "first_points",
-    }
-    col = CABIN_COL.get(cabin, "economy_points")
-
-    # Use only columns that exist in the routes table (no from_code, to_code, median_points_business, etc.)
-    BASE_SQL = """
-        SELECT from_city, to_city,
-               economy_points, premium_economy_points, business_points, first_points,
-               program, route_type
-        FROM routes
-        WHERE {where}
-        ORDER BY economy_points
-        LIMIT 1
-    """
-
-    # Try country-filtered lookup first
-    route = db.execute(
-        text(BASE_SQL.format(where="country = :c AND LOWER(from_city) LIKE :fc AND LOWER(to_city) LIKE :tc")),
-        {"c": country, "fc": f"%{from_city.lower()}%", "tc": f"%{to_city.lower()}%"}
-    ).fetchone()
-
-    if not route:
-        # Fallback: try any country (handles cross-country search like CA user picking IN cities)
-        route = db.execute(
-            text(BASE_SQL.format(where="LOWER(from_city) LIKE :fc AND LOWER(to_city) LIKE :tc")),
-            {"fc": f"%{from_city.lower()}%", "tc": f"%{to_city.lower()}%"}
-        ).fetchone()
-
-    if not route:
-        raise HTTPException(status_code=404, detail=f"Route '{from_city}' → '{to_city}' not found")
-
-    # Positional mapping: 0=from_city, 1=to_city, 2=econ, 3=prem_econ, 4=biz, 5=first, 6=program, 7=route_type
-    COL_IDX = {"economy_points": 2, "premium_economy_points": 3, "business_points": 4, "first_points": 5}
-    pts = route[COL_IDX[col]]
-    cabin_used = cabin
-    if not pts:
-        pts = route[2]  # economy fallback
-        cabin_used = "economy"
-    pts = pts or 0
-
-    # Simple seasonal note based on month (no dynamic pricing column needed)
-    seasonal_note = None
-    if month:
-        if month in PEAK_MONTHS:
-            seasonal_note = f"Peak season (Jun–Aug / Dec) — expect higher award availability costs. Book early."
-        elif month in SHOULDER_MONTHS:
-            seasonal_note = f"Shoulder season — slight premium over base rates possible."
-        else:
-            seasonal_note = "Off-peak — best time to book. Lowest award rates typically available."
-
-    return {
-        "found": True,
-        "route": f"{route[0]} → {route[1]}",
-        "program": route[6] or "",
-        "cabin": cabin_used,
-        "base_points": pts * passengers,
-        "base_points_per_person": pts,
-        "median_points": None,
-        "median_points_per_person": None,
-        "seasonal_note": seasonal_note,
-        "route_note": None,
-        "route_type": route[7] or "",
-        "passengers": passengers,
-        "is_dynamic": False,
-        "last_updated": "March 2026",
-    }
+    """Standard (non-promotional) bank → loyalty-program transfer ratios."""
+    if to_program:
+        return partners_for_program(to_program, country)
+    if from_program:
+        return partners_from_program(from_program, country)
+    rows = TRANSFER_PARTNERS
+    if country:
+        rows = [p for p in rows if p["country"] == country.upper()]
+    return rows
 
 
-# ─── /calculate-gap-v2 ───────────────────────────────────────────────────────
+# ─── /points-valuations ──────────────────────────────────────────────────────
 
-@app.get("/calculate-gap-v2")
-def calculate_gap_v2(
-    country: str = Query("CA"),
-    points_needed: int = Query(..., ge=0),
-    points_current: int = Query(..., ge=0),
-    timeline: int = Query(6, ge=1, le=60),
-    card_id: int = Query(...),
-    db: Session = Depends(get_db),
+@app.get("/points-valuations")
+def points_valuations(program: Optional[str] = Query(None, description="e.g. 'Aeroplan', 'Membership Rewards'")):
+    """Floor/ceiling cents-per-point valuation for a loyalty program, sourced from
+    published monthly valuation guides. Returns null when we have no sourced match —
+    never a guessed number."""
+    if program:
+        return get_valuation(program)
+    from data.points_valuations import ALL_VALUATIONS
+    return ALL_VALUATIONS
+
+
+# ─── /alliances ──────────────────────────────────────────────────────────────
+
+@app.get("/alliances")
+def alliances(program: Optional[str] = Query(None, description="e.g. 'Aeroplan', 'MileagePlus'")):
+    """Which airline alliance a program's airline belongs to — explains why a
+    program's chart reaches a given partner airline."""
+    if program:
+        return get_alliance(program)
+    from data.alliances import PROGRAM_TO_ALLIANCE
+    return PROGRAM_TO_ALLIANCE
+
+
+# ─── /sweet-spots-curated ────────────────────────────────────────────────────
+
+@app.get("/sweet-spots-curated")
+def sweet_spots_curated_endpoint(
+    program: Optional[str] = Query(None),
+    kind: Optional[str] = Query(None, description="flight | hotel"),
 ):
-    """
-    Gap calculation aware of welcome bonuses and earn rates.
-    card_id: the database ID of the credit card.
-    """
-    card = db.execute(
-        text("SELECT * FROM credit_cards WHERE id = :id"),
-        {"id": card_id}
-    ).fetchone()
+    """Editorial 'legendary/excellent/good' redemptions with sourcing — distinct
+    from /sweet-spots, which is computed from PointsPath's own route data."""
+    return curated_sweet_spots(program, kind)
 
-    if not card:
-        raise HTTPException(status_code=404, detail=f"Card id={card_id} not found")
 
-    card_dict = dict(card._mapping)
-    welcome = card_dict.get("welcome_bonus", 0) or 0
-    gap = max(0, points_needed - points_current)
-    remaining = max(0, gap - welcome)
+# ─── /stopovers ──────────────────────────────────────────────────────────────
 
-    # Parse earn rates
-    earn_rates_raw = card_dict.get("earn_rates", "{}")
-    try:
-        earn_map = json.loads(earn_rates_raw) if isinstance(earn_rates_raw, str) else (earn_rates_raw or {})
-    except Exception:
-        earn_map = {}
+@app.get("/stopovers")
+def stopovers(program: str = Query(..., description="e.g. 'Aeroplan'")):
+    rule = get_stopover_rule(program)
+    if not rule:
+        return {"allowed": None, "note": "No sourced stopover rule for this program yet."}
+    return rule
 
-    if earn_map:
-        rates = sorted(earn_map.values(), reverse=True)
-        # Weighted avg: top rate 40%, 2nd 30%, rest 30%
-        if len(rates) >= 2:
-            avg_rate = rates[0] * 0.4 + rates[1] * 0.3 + sum(rates[2:]) * 0.3 / max(len(rates) - 2, 1)
-        else:
-            avg_rate = rates[0]
+
+# ─── /cabin-codes ────────────────────────────────────────────────────────────
+
+@app.get("/cabin-codes")
+def cabin_codes():
+    return CABIN_CODES
+
+
+# ─── /wallet — server-side saved journey, replaces device-only localStorage ──
+
+@app.get("/wallet")
+def get_wallet(db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    wallet = db.query(SavedWalletModel).filter(SavedWalletModel.supabase_user_id == user_id).first()
+    if not wallet:
+        return {"country": None, "data": {}}
+    return {"country": wallet.country, "data": json.loads(wallet.data), "updated_at": wallet.updated_at.isoformat()}
+
+
+@app.put("/wallet")
+def put_wallet(payload: WalletPayload, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    wallet = db.query(SavedWalletModel).filter(SavedWalletModel.supabase_user_id == user_id).first()
+    data_str = json.dumps(payload.data)
+    if wallet:
+        wallet.country = payload.country
+        wallet.data = data_str
     else:
-        avg_rate = 1.5
-
-    avg_rate = round(avg_rate, 2)
-    monthly_spend = round(remaining / timeline / avg_rate) if remaining > 0 and timeline > 0 and avg_rate > 0 else 0
-
-    return {
-        "card_id": card_id,
-        "card_name": card_dict.get("name", ""),
-        "card_issuer": card_dict.get("issuer", ""),
-        "card_program": card_dict.get("program", ""),
-        "annual_fee": card_dict.get("annual_fee"),
-        "currency": card_dict.get("currency", "CAD"),
-        "points_needed": points_needed,
-        "points_current": points_current,
-        "gap": gap,
-        "welcome_bonus": welcome,
-        "remaining_after_bonus": remaining,
-        "avg_earn_rate": avg_rate,
-        "timeline_months": timeline,
-        "monthly_spend_needed": monthly_spend,
-        "already_has_enough": gap <= 0,
-        "bonus_covers_gap": welcome >= gap,
-        "last_updated": "March 2026",
-    }
+        wallet = SavedWalletModel(supabase_user_id=user_id, country=payload.country, data=data_str)
+        db.add(wallet)
+    db.commit()
+    db.refresh(wallet)
+    return {"country": wallet.country, "data": json.loads(wallet.data), "updated_at": wallet.updated_at.isoformat()}
 
 
 # ─── /sweet-spots ────────────────────────────────────────────────────────────
@@ -675,105 +635,6 @@ def sweet_spots(
     ]
 
 
-# ─── Hotel programs data ──────────────────────────────────────────────────────
-
-HOTEL_PROGRAMS = [
-    {
-        "id": "marriott",
-        "name": "Marriott Bonvoy",
-        "logo": "🏨",
-        "description": "30+ brands: Marriott, Sheraton, Westin, Ritz-Carlton, W Hotels, St. Regis",
-        "categories": [
-            {"tier": "Category 1", "label": "Budget",        "points_per_night": 7500,  "example": "Courtyard, Fairfield"},
-            {"tier": "Category 2", "label": "Standard",      "points_per_night": 12500, "example": "Four Points, Aloft"},
-            {"tier": "Category 3", "label": "Mid-Range",     "points_per_night": 17500, "example": "Sheraton, Le Méridien"},
-            {"tier": "Category 4", "label": "Upper Mid",     "points_per_night": 25000, "example": "Westin, Renaissance"},
-            {"tier": "Category 5", "label": "Upscale",       "points_per_night": 35000, "example": "JW Marriott, Autograph"},
-            {"tier": "Category 6", "label": "Luxury",        "points_per_night": 50000, "example": "W Hotels, EDITION"},
-            {"tier": "Category 7", "label": "Premium",       "points_per_night": 62500, "example": "Ritz-Carlton"},
-            {"tier": "Category 8", "label": "Top Tier",      "points_per_night": 85000, "example": "St. Regis Maldives"},
-        ],
-        "earn_cards": {
-            "CA": ["American Express Cobalt Card", "American Express Platinum Card"],
-            "US": ["Amex Marriott Bonvoy Brilliant", "Chase Sapphire Reserve"],
-            "IN": ["HDFC Infinia", "Amex Platinum India"],
-            "HK": ["American Express Platinum HK", "Citi Prestige HK"],
-        },
-        "transfer_programs": ["Amex Membership Rewards → Marriott (1:1.25)", "Chase UR → Marriott (1:1)"],
-        "sweet_spot": "Category 4-5 properties offer the best points value",
-        "countries": ["CA", "US", "IN", "HK"],
-    },
-    {
-        "id": "hilton",
-        "name": "Hilton Honors",
-        "logo": "🏩",
-        "description": "18+ brands: Hilton, DoubleTree, Conrad, Waldorf Astoria, Curio Collection",
-        "categories": [
-            {"tier": "Tier 1", "label": "Budget",   "points_per_night": 5000,   "example": "Hampton Inn, Tru by Hilton"},
-            {"tier": "Tier 2", "label": "Standard", "points_per_night": 10000,  "example": "DoubleTree, Embassy Suites"},
-            {"tier": "Tier 3", "label": "Upscale",  "points_per_night": 30000,  "example": "Hilton Hotels & Resorts"},
-            {"tier": "Tier 4", "label": "Luxury",   "points_per_night": 60000,  "example": "Conrad Hotels, Canopy"},
-            {"tier": "Tier 5", "label": "Top Tier", "points_per_night": 120000, "example": "Waldorf Astoria"},
-        ],
-        "earn_cards": {
-            "CA": ["American Express Platinum Card", "American Express Gold Rewards"],
-            "US": ["Amex Hilton Honors Aspire", "Capital One Venture X"],
-            "IN": ["Amex Platinum India", "HDFC Infinia"],
-            "HK": ["American Express Platinum HK", "DBS Black World Mastercard HK"],
-        },
-        "transfer_programs": ["Amex Membership Rewards → Hilton (1:2)", "Capital One Miles → Hilton (1:2)"],
-        "sweet_spot": "Tier 2-3 properties offer 0.5–0.7 cents/point value",
-        "countries": ["CA", "US", "IN", "HK"],
-    },
-    {
-        "id": "hyatt",
-        "name": "World of Hyatt",
-        "logo": "⭐",
-        "description": "Hyatt, Grand Hyatt, Park Hyatt, Andaz, Alila, Thompson Hotels",
-        "categories": [
-            {"tier": "Category 1", "label": "Budget",         "points_per_night": 3500,  "example": "Hyatt House, Hyatt Place"},
-            {"tier": "Category 2", "label": "Standard",       "points_per_night": 8000,  "example": "Hyatt Regency Tier 2"},
-            {"tier": "Category 3", "label": "Mid-Range",      "points_per_night": 12000, "example": "Hyatt Centric"},
-            {"tier": "Category 4", "label": "Upper Upscale",  "points_per_night": 18000, "example": "Grand Hyatt"},
-            {"tier": "Category 5", "label": "Luxury",         "points_per_night": 25000, "example": "Park Hyatt"},
-            {"tier": "Category 6", "label": "Prem. Luxury",   "points_per_night": 40000, "example": "Andaz, Alila"},
-            {"tier": "Category 7", "label": "Ultra Premium",  "points_per_night": 55000, "example": "Park Hyatt Maldives"},
-        ],
-        "earn_cards": {
-            "CA": ["Chase Sapphire Reserve"],
-            "US": ["Chase Sapphire Reserve", "Chase Sapphire Preferred"],
-            "IN": ["Axis Magnus", "HDFC Diners Club Black"],
-            "HK": ["Citi Prestige HK", "Standard Chartered Visa Infinite HK"],
-        },
-        "transfer_programs": ["Chase UR → Hyatt (1:1) — best transfer rate", "Capital One Miles → Hyatt (1:1)"],
-        "sweet_spot": "Hyatt has highest points value (~1.7 cents/point). Category 1-4 is exceptional.",
-        "countries": ["CA", "US", "IN", "HK"],
-    },
-    {
-        "id": "ihg",
-        "name": "IHG One Rewards",
-        "logo": "🏰",
-        "description": "InterContinental, Holiday Inn, Crowne Plaza, Regent, Kimpton, Six Senses",
-        "categories": [
-            {"tier": "Tier 1", "label": "Budget",   "points_per_night": 10000,  "example": "Holiday Inn Express"},
-            {"tier": "Tier 2", "label": "Standard", "points_per_night": 25000,  "example": "Holiday Inn, Staybridge"},
-            {"tier": "Tier 3", "label": "Upscale",  "points_per_night": 40000,  "example": "Crowne Plaza"},
-            {"tier": "Tier 4", "label": "Luxury",   "points_per_night": 70000,  "example": "InterContinental, Kimpton"},
-            {"tier": "Tier 5", "label": "Top Tier", "points_per_night": 100000, "example": "Six Senses, Regent"},
-        ],
-        "earn_cards": {
-            "CA": ["RBC Avion Visa Infinite", "American Express Platinum Card"],
-            "US": ["Chase Sapphire Reserve", "Capital One Venture X"],
-            "IN": ["HDFC Diners Club Black", "Axis Magnus"],
-            "HK": ["HSBC Premier Mastercard HK", "Citi Prestige HK"],
-        },
-        "transfer_programs": ["Chase UR → IHG (1:1)", "Amex MR → IHG (1:1)", "Capital One → IHG (1:1)"],
-        "sweet_spot": "4th-night-free benefit on points redemptions is the best deal",
-        "countries": ["CA", "US", "IN", "HK"],
-    },
-]
-
-
 @app.get("/hotels")
 def get_hotels(country: str = Query("CA")):
     """Return hotel loyalty programs with earn strategies for the given country."""
@@ -798,6 +659,9 @@ def calculate_hotel_points(
     if not prog:
         raise HTTPException(status_code=404, detail=f"Program '{program}' not found")
     cats = prog["categories"]
+    if not cats:
+        raise HTTPException(status_code=400,
+            detail=f"{prog['name']} has no published per-night award chart in our data — books by the night or by brand tier instead.")
     idx = min(tier - 1, len(cats) - 1)
     cat = cats[idx]
     base = cat["points_per_night"]

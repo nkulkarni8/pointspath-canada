@@ -8,23 +8,53 @@ Countries: Canada 🇨🇦 | USA 🇺🇸 | India 🇮🇳
 GitHub: https://github.com/nkulkarni8/pointspath-canada
 
 ## Tech Stack
-| Layer    | Technology                                      |
-|----------|-------------------------------------------------|
-| Frontend | React 19 + Vite + Tailwind CSS + Axios + Lucide |
-| Backend  | Python FastAPI + SQLAlchemy + Pydantic          |
-| Database | Neon PostgreSQL (prod) / SQLite (local)         |
-| Auth     | Supabase Email OTP (auth only, not DB)          |
-| Analytics| Google Analytics 4 via gtag                     |
-| Deploy   | Vercel (frontend) + Render (backend)            |
-| Monitor  | UptimeRobot (pings /health with HEAD)           |
+| Layer    | Technology                                                  |
+|----------|-------------------------------------------------------------|
+| Frontend | React 19 + Vite + React Router 7 + Tailwind CSS + Lucide     |
+| PWA      | vite-plugin-pwa (Workbox) — installable, offline-capable     |
+| Backend  | Python FastAPI + SQLAlchemy + Pydantic                       |
+| Database | Neon PostgreSQL (prod) / SQLite (local)                      |
+| Auth     | Supabase Email OTP (auth only, not DB)                       |
+| Analytics| Google Analytics 4 via gtag                                  |
+| Deploy   | Vercel (frontend) + Render (backend)                         |
+| Monitor  | UptimeRobot (pings /health with HEAD)                        |
+
+## Frontend Architecture
+Routes are real URLs (React Router), not tab state. Country travels as a
+`?country=CA` query param so links are shareable.
+
+```
+src/
+  App.jsx              layout shell (header, tabs, journey bar) + <Routes>
+  main.jsx             ErrorBoundary > BrowserRouter > AuthProvider > App
+  theme.js             T colour tokens, GRADIENT(), inputStyle(), lbl
+  constants.js         COUNTRIES, CABINS, TABS, CITY_REGION, REVIEWS, …
+  context/AppContext   country, theme, cached country data, journey, go()
+  context/AuthContext  Supabase OTP session
+  lib/api.js           API base, fetchCountryData(), track()
+  lib/format.js        fmt(), seasonBadge(), groupByRegion()
+  data/                CARD_EARNING_RATES, FALLBACK_HOTELS
+  pages/               Calculator | Hotels | Gap | Cards | Spots | About
+  components/          CitySelect, JourneyBar/Setup, Skeleton, InstallButton, …
+```
+
+Routes: `/calculator` `/hotels` `/gap` `/cards` `/spots` `/about`.
+All except `/about` sit behind `<RequireAuth>`.
+
+Backend static data lives in `backend/data/` (`earning_rates.py`, `hotels.py`,
+`countries.py`) — `main.py` imports it rather than defining it inline.
 
 ## Non-Negotiable Rules
 1. Health endpoint supports both GET and HEAD — required for UptimeRobot
 2. Never hardcode city lists — always query DB dynamically
 3. Neon is the database — Supabase is auth only
-4. All API calls include ?country= parameter (CA | US | IN)
+4. All API calls include ?country= parameter (CA | US | IN | HK)
 5. Backward compatibility — new features must not break existing flows
 6. Verify DB counts after every prod deploy
+7. Keep the SPA rewrite in `frontend/vercel.json` — without it every route
+   except `/` 404s in production
+8. Navigate with `go()` / `withCountry()` from AppContext so the `?country=`
+   param survives — never a bare `navigate("/cards")`
 
 ## Data
 - Cards: 64 total (CA: 22, US: 24, IN: 18)

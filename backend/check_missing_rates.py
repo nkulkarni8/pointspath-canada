@@ -7,10 +7,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from models import CreditCard
 
-# Import the earning rates from main.py
 import sys
 sys.path.insert(0, '.')
-from main import CARD_EARNING_RATES
+from data.earning_rates import CARD_EARNING_RATES
 
 DATABASE_URL = "sqlite:///./points_optimizer.db"
 engine = create_engine(DATABASE_URL)

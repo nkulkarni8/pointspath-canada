@@ -29,6 +29,13 @@ Calculate points needed for any route, find the best earning strategy, and bridg
 - **USA:** 24 cards — Chase UR, Amex MR, Capital One, Citi TY, SkyMiles, United, Hilton, Marriott
 - **India:** 18 cards — HDFC Infinia, Axis Magnus, SBI Prime, ICICI Emeralde, Amex, Vistara
 
+### Progressive Web App
+- Installable on phone and desktop — "Add to Home Screen" launches it full screen
+- Service worker precaches the app shell; previously loaded cards, routes and
+  sweet spots stay readable offline
+- Shareable URLs per section (`/calculator`, `/cards`, …) with the country
+  carried as `?country=CA`
+
 ### Authentication
 - Supabase Email OTP (no password ever)
 - Google Analytics 4 — track signups, country usage, feature adoption
@@ -37,16 +44,17 @@ Calculate points needed for any route, find the best earning strategy, and bridg
 
 ## Tech Stack
 
-| Layer    | Technology                                      |
-|----------|-------------------------------------------------|
-| Frontend | React 19 + Vite + Tailwind CSS + Axios          |
-| Backend  | Python FastAPI + SQLAlchemy + Pydantic          |
-| Database | Neon PostgreSQL (prod) / SQLite (local)         |
-| Auth     | Supabase Email OTP                              |
-| Analytics| Google Analytics 4                              |
-| Deploy   | Vercel (frontend) + Render (backend)            |
-| Monitor  | UptimeRobot                                     |
-| Email    | Beehiiv newsletters                             |
+| Layer    | Technology                                              |
+|----------|---------------------------------------------------------|
+| Frontend | React 19 + Vite + React Router 7 + Tailwind CSS         |
+| PWA      | vite-plugin-pwa (Workbox)                               |
+| Backend  | Python FastAPI + SQLAlchemy + Pydantic                  |
+| Database | Neon PostgreSQL (prod) / SQLite (local)                 |
+| Auth     | Supabase Email OTP                                      |
+| Analytics| Google Analytics 4                                      |
+| Deploy   | Vercel (frontend) + Render (backend)                    |
+| Monitor  | UptimeRobot                                             |
+| Email    | Beehiiv newsletters                                     |
 
 ---
 
@@ -91,6 +99,16 @@ cp .env.example .env
 npm run dev
 # → http://localhost:5173
 ```
+
+Regenerate the PWA icon set after a brand change:
+
+```bash
+cd frontend
+npm run icons          # writes favicon.svg + pwa-*.png into public/
+```
+
+The service worker only runs in a production build — test installability with
+`npm run build && npm run preview`.
 
 ---
 
